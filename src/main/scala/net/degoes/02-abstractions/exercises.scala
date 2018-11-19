@@ -15,7 +15,7 @@ object algebra {
   //
   implicit val StringSemigroup: Semigroup[String] =
     new Semigroup[String] {
-      def append(l: String, r: => String): String = ???
+      def append(l: String, r: => String): String = l + r
     }
 
   //
@@ -23,11 +23,11 @@ object algebra {
   //
   // Define a semigroup instance for the `NotEmpty` data type below.
   //
-  case class NotEmpty[+A](head: A, tail: Option[NotEmpty[A]])
+  final case class NotEmpty[+A](head: A, tail: Option[NotEmpty[A]])
   implicit def NotEmptySemigroup[A]: Semigroup[NotEmpty[A]] =
     new Semigroup[NotEmpty[A]] {
       def append(l: NotEmpty[A], r: => NotEmpty[A]): NotEmpty[A] =
-        ???
+        l.tail.fold(l.copy(tail = Some(r))) { t => l.copy(tail = Some(append(t, r))) }
     }
   val example1 = NotEmpty(1, None) |+| NotEmpty(2, None)
 
@@ -39,7 +39,7 @@ object algebra {
   final case class Max(value: Int)
   implicit val MaxSemigroup: Semigroup[Max] =
     new Semigroup[Max] {
-      def append(l: Max, r: => Max): Max = ???
+      def append(l: Max, r: => Max): Max = if (l.value > r.value) l else r
     }
 
   //
@@ -50,7 +50,7 @@ object algebra {
   final case class Last[A](value: A)
   implicit def LastSemigroup[A]: Semigroup[Last[A]] =
     new Semigroup[Last[A]] {
-      def append(l: Last[A], r: => Last[A]): Last[A] = ???
+      def append(l: Last[A], r: => Last[A]): Last[A] = r
     }
   final case class First[A](value: A)
   implicit def FirstSemigroup[A]: Semigroup[First[A]] =
@@ -67,10 +67,10 @@ object algebra {
     new Semigroup[Option[A]] {
       def append(l: Option[A], r: => Option[A]): Option[A] =
         (l, r) match {
-          case (   None,    None) => ???
-          case (Some(l),    None) => ???
-          case (   None, Some(r)) => ???
-          case (Some(l), Some(r)) => ???
+          case (   None,    None) => None
+          case (Some(l),    None) => Some(l)
+          case (   None, Some(r)) => Some(r)
+          case (Some(l), Some(r)) => Some(l |+| r)
         }
     }
 
@@ -82,8 +82,7 @@ object algebra {
   //
   implicit def SemigroupTuple2[A: Semigroup, B: Semigroup]:
     Semigroup[(A, B)] = new Semigroup[(A, B)] {
-      def append(l: (A, B), r: => (A, B)): (A, B) =
-        ???
+      def append(l: (A, B), r: => (A, B)): (A, B) = (l._1 |+| r._1, l._2 |+| r._2)
     }
 
   //
@@ -94,8 +93,8 @@ object algebra {
   final case class Conj(value: Boolean)
   implicit val ConjMonoid: Monoid[Conj] =
     new Monoid[Conj] {
-      def zero: Conj = ???
-      def append(l: Conj, r: => Conj): Conj = ???
+      def zero: Conj = Conj(true)
+      def append(l: Conj, r: => Conj): Conj = Conj(l.value && r.value)
     }
 
   //
@@ -106,8 +105,8 @@ object algebra {
   final case class Disj(value: Boolean)
   implicit val DisjMonoid: Monoid[Disj] =
     new Monoid[Disj] {
-      def zero: Disj = ???
-      def append(l: Disj, r: => Disj): Disj = ???
+      def zero: Disj = Disj(false)
+      def append(l: Disj, r: => Disj): Disj = Disj(l.value || r.value)
     }
 
   //
@@ -118,23 +117,35 @@ object algebra {
   case object ZeroThrowable extends Throwable
   def TryMonoid[A: Semigroup]: Monoid[scala.util.Try[A]] =
     new Monoid[scala.util.Try[A]] {
-      import scala.util.Try
+      import scala.util.{Try, Success, Failure}
 
-      def zero: Try[A] = ???
+      case object Zero extends Throwable
+
+      def zero: Try[A] = Failure(Zero)
 
       def append(l: Try[A], r: => Try[A]): Try[A] =
-        ???
+        (l, r) match {
+          case (Success(la), Success(ra)) => Success(la |+| ra)
+          case (Success(la), Failure(_))  => Success(la)
+          case (Failure(_), Success(ra))  => Success(ra)
+          case (Failure(_), Failure(rf))  => Failure(rf)
+        }
     }
 
   //
   // EXERCISE 10
   //
-  // Write the `Semigroup` instance for `Map` when the values form a semigroup.
+  // Write the `Monoid` instance for `Map` when the values form a semigroup.
   //
-  def SemigroupMap[K, V: Semigroup]: Semigroup[Map[K, V]] =
-    new Semigroup[Map[K, V]] {
+  def MonoidMap[K, V: Semigroup]: Monoid[Map[K, V]] =
+    new Monoid[Map[K, V]] {
+      def zero: Map[K, V] = Map.empty[K, V]
+
       def append(l: Map[K, V], r: => Map[K, V]): Map[K, V] =
-        ???
+        (l.keys ++ r.keys).foldLeft(zero) { case (acc, k) =>
+          val valueM = l.get(k) |+| r.get(k)
+          valueM.map(v => acc + (k -> v)).getOrElse(acc)
+        }
     }
 
   //
@@ -156,30 +167,25 @@ object algebra {
     final case object Read extends Capability
     final case object Write extends Capability
   }
-  case class UserPermission(value: ???) {
-    def allResources: Set[ResourceID] = ???
+
+  final case class Resource(resourceID: ResourceID, accountID: AccountID, capability: Capability)
+
+  final case class UserPermission(value: List[Resource]) {
+    def allResources: Set[ResourceID] = value.map(_.resourceID).toSet
 
     def capabilitiesFor(resourceID: ResourceID): Set[Capability] =
-      ???
+      value.filter(_.resourceID == resourceID).map(_.capability).toSet
 
     def audit(resourceID: ResourceID, capability: Capability): Set[AccountID] =
-      ???
+      value.filter(v => v.resourceID == resourceID && v.capability == capability).map(_.accountID).toSet
   }
+
   implicit val MonoidUserPermission: Monoid[UserPermission] =
     new Monoid[UserPermission] {
-      def zero: UserPermission = ???
+      def zero: UserPermission = UserPermission(Nil)
 
-      def append(l: UserPermission, r: => UserPermission): UserPermission =
-        ???
+      def append(l: UserPermission, r: => UserPermission): UserPermission = UserPermission(l.value |+| r.value)
     }
-  val example2 = mzero[UserPermission] |+| UserPermission(???)
-
-  //
-  // EXERCISE 12
-  //
-  // Try to define an instance of `Monoid` for `NotEmpty` for any type `A`.
-  //
-  implicit def MonoidNotEmpty[A]: Monoid[NotEmpty[A]] = ???
 }
 
 object functor {
