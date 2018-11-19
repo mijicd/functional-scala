@@ -353,40 +353,41 @@ object higher_order {
   //
   // Implement the following higher-order function.
   //
-  def fanout[A, B, C](f: A => B, g: A => C): A => (B, C) =
-    ???
+  def fanout[A, B, C](f: A => B, g: A => C): A => (B, C) = a => (f(a), g(a))
 
   //
   // EXERCISE 2
   //
   // Implement the following higher-order function.
   //
-  def cross[A, B, C, D](f: A => B, g: C => D): (A, C) => (B, D) =
-    ???
+  def cross[A, B, C, D](f: A => B, g: C => D): (A, C) => (B, D) = (a, c) => (f(a), g(c))
 
   //
   // EXERCISE 3
   //
   // Implement the following higher-order function.
   //
-  def either[A, B, C](f: A => B, g: C => B): Either[A, C] => B =
-    ???
+  def either[A, B, C](f: A => B, g: C => B): Either[A, C] => B = {
+    case Left(a) => f(a)
+    case Right(c) => g(c)
+  }
 
   //
   // EXERCISE 4
   //
   // Implement the following higher-order function.
   //
-  def choice[A, B, C, D](f: A => B, g: C => D): Either[A, C] => Either[B, D] =
-    ???
+  def choice[A, B, C, D](f: A => B, g: C => D): Either[A, C] => Either[B, D] = {
+    case Left(a) => Left(f(a))
+    case Right(c) => Right(g(c))
+  }
 
   //
   // EXERCISE 5
   //
-  // Implement the following higer-order function.
+  // Implement the following higher-order function.
   //
-  def compose[A, B, C](f: B => C, g: A => B): A => C =
-    ???
+  def compose[A, B, C](f: B => C, g: A => B): A => C = f compose g
 
   //
   // EXERCISE 6
@@ -394,17 +395,23 @@ object higher_order {
   // Implement the following higher-order function. After you implement
   // the function, interpret its meaning.
   //
-  def alt[E1, E2, A, B](l: Parser[E1, A], r: E1 => Parser[E2, B]):
-    Parser[E2, Either[A, B]] =
-      ???
+  def alt[E1, E2, A, B](l: Parser[E1, A], r: E1 => Parser[E2, B]): Parser[E2, Either[A, B]] =
+    Parser { in =>
+      l.run(in) match {
+        case Left(e1) =>
+          r(e1).run(in) match {
+            case Left(e2) => Left(e2)
+            case Right((s, b)) => Right((s, Right(b)))
+          }
+        case Right((s, a)) => Right((s, Left(a)))
+      }
+    }
 
-  case class Parser[+E, +A](run: String => Either[E, (String, A)])
+  final case class Parser[+E, +A](run: String => Either[E, (String, A)])
   object Parser {
-    final def fail[E](e: E): Parser[E, Nothing] =
-      Parser(_ => Left(e))
+    final def fail[E](e: E): Parser[E, Nothing] = Parser(_ => Left(e))
 
-    final def point[A](a: => A): Parser[Nothing, A] =
-      Parser(input => Right((input, a)))
+    final def point[A](a: => A): Parser[Nothing, A] = Parser(input => Right((input, a)))
 
     final def char[E](e: E): Parser[E, Char] =
       Parser(input =>
