@@ -2,6 +2,7 @@
 
 package net.degoes.essentials
 
+import java.io.File
 import java.time.LocalDate
 
 object types {
@@ -524,7 +525,7 @@ object higher_kinded {
   //
   // Create a new type called `Answer3` that has kind `*`.
   //
-  type Answer3 = Int
+  trait Answer3
 
   //
   // EXERCISE 4
@@ -832,7 +833,13 @@ object typeclasses {
 
       sort1(lessThan) ++ List(x) ++ sort1(notLessThan)
   }
-  def sort2[A: Ord](l: List[A]): List[A] = ???
+  def sort2[A: Ord](l: List[A]): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(_ < x)
+
+      sort2(lessThan) ++ List(x) ++ sort2(notLessThan)
+  }
 
   //
   // EXERCISE 2
@@ -851,11 +858,20 @@ object typeclasses {
     def apply[A](implicit A: PathLike[A]): PathLike[A] = A
   }
   sealed trait MyPath
+  case object Root extends MyPath
+  final case class ChildOf(path: MyPath, name: String) extends MyPath
+
   implicit val MyPathPathLike: PathLike[MyPath] =
     new PathLike[MyPath] {
-      def child(parent: MyPath, name: String): MyPath = ???
-      def parent(node: MyPath): Option[MyPath] = ???
-      def root: MyPath = ???
+      def child(parent: MyPath, name: String): MyPath = ChildOf(parent, name)
+
+      def parent(node: MyPath): Option[MyPath] =
+        node match {
+          case Root => None
+          case ChildOf(p, _) => Some(p)
+        }
+
+      def root: MyPath = Root
     }
 
   //
@@ -863,7 +879,13 @@ object typeclasses {
   //
   // Create an instance of the `PathLike` type class for `java.io.File`.
   //
-  implicit val FilePathLike: PathLike[java.io.File] = ???
+  implicit val FilePathLike: PathLike[File] = new PathLike[File] {
+    override def child(parent: File, name: String): File = new File(parent, name)
+
+    override def parent(node: File): Option[File] = Option(node.getParentFile)
+
+    override def root: File = new File("/")
+  }
 
   //
   // EXERCISE 4
@@ -871,10 +893,10 @@ object typeclasses {
   // Create two laws for the `PathLike` type class.
   //
   trait PathLikeLaws[A] extends PathLike[A] {
-    def law1: Boolean = ???
+    def law1: Boolean = parent(root).isEmpty
 
     def law2(node: A, name: String, assertEquals: (A, A) => Boolean): Boolean =
-      ???
+      parent(child(node, name)).fold(false)(p => assertEquals(node, p))
   }
 
   //
@@ -884,13 +906,14 @@ object typeclasses {
   // into the given named node.
   //
   implicit class PathLikeSyntax[A](a: A) {
-    def / (name: String)(implicit A: PathLike[A]): A = ???
+    def / (name: String)(implicit A: PathLike[A]): A = A.child(a, name)
 
-    def parent(implicit A: PathLike[A]): Option[A] = ???
+    def parent(implicit A: PathLike[A]): Option[A] = A.parent(a)
   }
   def root[A: PathLike]: A = PathLike[A].root
-  //  root[MyPath] / "foo" / "bar" / "baz" // MyPath
-  // (root[MyPath] / "foo").parent        // Option[MyPath]
+
+  root[MyPath] / "foo" / "bar" / "baz" // MyPath
+  (root[MyPath] / "foo").parent        // Option[MyPath]
 
   //
   // EXERCISE 6
@@ -903,7 +926,9 @@ object typeclasses {
   object Filterable {
     def apply[F[_]](implicit F: Filterable[F]): Filterable[F] = F
   }
-  implicit val FilterableList: Filterable[List] = ???
+  implicit val FilterableList: Filterable[List] = new Filterable[List] {
+    override def filter[A](fa: List[A], f: A => Boolean): List[A] = fa.filter(f)
+  }
 
   //
   // EXERCISE 7
@@ -912,9 +937,9 @@ object typeclasses {
   // type for which there exists a `Filterable` instance.
   //
   implicit class FilterableSyntax[F[_], A](fa: F[A]) {
-    ???
+    def filterWith(f: A => Boolean)(implicit F: Filterable[F]): F[A] = F.filter(fa, f)
   }
-  // List(1, 2, 3).filterWith(_ == 2)
+  List(1, 2, 3).filterWith(_ == 2)
 
   //
   // EXERCISE 8
@@ -929,7 +954,17 @@ object typeclasses {
   object Collection {
     def apply[F[_]](implicit F: Collection[F]): Collection[F] = F
   }
-  implicit val ListCollection: Collection[List] = ???
+  implicit val ListCollection: Collection[List] = new Collection[List] {
+    override def empty[A]: List[A] = Nil
+
+    override def cons[A](a: A, as: List[A]): List[A] = a :: as
+
+    override def uncons[A](fa: List[A]): Option[(A, List[A])] =
+      fa match {
+        case x :: xs => Some((x, xs))
+        case Nil => None
+      }
+  }
 
   val example = Collection[List].cons(1, Collection[List].empty)
 
@@ -939,7 +974,8 @@ object typeclasses {
   // Create laws for the `Collection` type class.
   //
   trait CollectionLaws[F[_]] extends Collection[F] {
-
+    def duality[A](a: A): Boolean =
+      uncons(cons(a, empty[A])).fold(false) { case (h, t) => h == a && t == empty[A] }
   }
 
   //
@@ -949,10 +985,11 @@ object typeclasses {
   // Specifically, add an `uncons` method to such types.
   //
   implicit class CollectionSyntax[F[_], A](fa: F[A]) {
-    ???
-
     def cons(a: A)(implicit F: Collection[F]): F[A] = F.cons(a, fa)
+
+    def uncons(implicit F: Collection[F]): Option[(A, F[A])] = F.uncons(fa)
   }
   def empty[F[_]: Collection, A]: F[A] = Collection[F].empty[A]
-  // List(1, 2, 3).uncons // Some((1, List(2, 3)))
+
+  List(1, 2, 3).uncons // Some((1, List(2, 3)))
 }
