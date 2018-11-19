@@ -2,6 +2,8 @@
 
 package net.degoes.essentials
 
+import java.time.LocalDate
+
 object types {
   type ??? = Nothing
 
@@ -10,43 +12,43 @@ object types {
   //
   // List all values of the type `Unit`.
   //
-  val UnitValues: Set[Unit] = ???
+  val UnitValues: Set[Unit] = Set(())
 
   //
   // EXERCISE 2
   //
   // List all values of the type `Nothing`.
   //
-  val NothingValues: Set[Nothing] = ???
+  val NothingValues: Set[Nothing] = Set()
 
   //
   // EXERCISE 3
   //
   // List all values of the type `Boolean`.
   //
-  val BoolValues: Set[Boolean] = ???
+  val BoolValues: Set[Boolean] = Set(true, false)
 
   //
   // EXERCISE 4
   //
   // List all values of the type `Either[Unit, Boolean]`.
   //
-  val EitherUnitBoolValues: Set[Either[Unit, Boolean]] = ???
+  val EitherUnitBoolValues: Set[Either[Unit, Boolean]] = Set(Left(()), Right(true), Right(false))
 
   //
   // EXERCISE 5
   //
   // List all values of the type `(Boolean, Boolean)`.
   //
-  val TupleBoolBoolValues: Set[(Boolean, Boolean)] =
-    ???
+  val TupleBoolBoolValues: Set[(Boolean, Boolean)] = Set((true, true), (true, false), (false, true), (false, false))
 
   //
   // EXERCISE 6
   //
   // List all values of the type `Either[Either[Unit, Unit], Unit]`.
   //
-  val EitherEitherUnitUnitUnitValues: Set[Either[Either[Unit, Unit], Unit]] = ???
+  val EitherEitherUnitUnitUnitValues: Set[Either[Either[Unit, Unit], Unit]] =
+    Set(Left(Left(())), Left(Right(())), Right(()))
 
   //
   // EXERCISE 7
@@ -57,7 +59,8 @@ object types {
   //
   // List all the elements in `A * B`.
   //
-  val AProductB: Set[(Boolean, String)] = ???
+  val AProductB: Set[(Boolean, String)] =
+    Set((true, "red"), (true, "green"), (true, "blue"), (false, "red"), (false, "green"), (false, "blue"))
 
   //
   // EXERCISE 8
@@ -68,7 +71,7 @@ object types {
   //
   // List all the elements in `A + B`.
   //
-  val ASumB: Set[Either[Boolean, String]] = ???
+  val ASumB: Set[Either[Boolean, String]] = Set(Left(true), Left(false), Right("red"), Right("green"), Right("blue"))
 
   //
   // EXERCISE 9
@@ -76,8 +79,8 @@ object types {
   // Create a product type of `Int` and `String`, representing the age and
   // name of a person.
   //
-  type Person1 = ???
-  case class Person2(/*  */)
+  type Person1 = (Int, String)
+  final case class Person2(age: Int, name: String)
 
   //
   // EXERCISE 10
@@ -85,8 +88,8 @@ object types {
   // Prove that `A * 1` is equivalent to `A` by implementing the following two
   // functions.
   //
-  def to1[A](t: (A, Unit)): A = ???
-  def from1[A](a: A): (A, Unit) = ???
+  def to1[A](t: (A, Unit)): A = t._1
+  def from1[A](a: A): (A, Unit) = (a, ())
 
   //
   // EXERCISE 11
@@ -94,8 +97,8 @@ object types {
   // Prove that `A * 0` is equivalent to `0` by implementing the following two
   // functions.
   //
-  def to2[A](t: (A, Nothing)): Nothing = ???
-  def from2[A](n: Nothing): (A, Nothing) = ???
+  def to2[A](t: (A, Nothing)): Nothing = t._2
+  def from2[A](n: Nothing): (A, Nothing) = n
 
   //
   // EXERCISE 12
@@ -105,6 +108,8 @@ object types {
   //
   type Identifier1 = Either[Int, String]
   sealed trait Identifier2
+  final case class RobotId(number: Int) extends Identifier2
+  final case class PersonId(name: String) extends Identifier2
 
   //
   // EXERCISE 13
@@ -112,8 +117,13 @@ object types {
   // Prove that `A + 0` is equivalent to `A` by implementing the following two
   // functions.
   //
-  def to3[A](t: Either[A, Nothing]): A = ???
-  def from3[A](a: A): Either[A, Nothing] = ???
+  def to3[A](t: Either[A, Nothing]): A =
+    t match {
+      case Left(a) => a
+      case Right(n) => n
+    }
+
+  def from3[A](a: A): Either[A, Nothing] = Left(a)
 
   //
   // EXERCISE 14
@@ -121,7 +131,7 @@ object types {
   // Create either a sum type or a product type (as appropriate) to represent a
   // credit card, which has a number, an expiration date, and a security code.
   //
-  type CreditCard = ???
+  final case class CreditCard(number: Long, expirationDate: LocalDate, securityCode: String)
 
   //
   // EXERCISE 15
@@ -130,7 +140,10 @@ object types {
   // payment method, which could be a credit card, bank account, or
   // cryptocurrency.
   //
-  type PaymentMethod = ???
+  sealed trait PaymentMethod
+  case object Card extends PaymentMethod
+  case object BankAccount extends PaymentMethod
+  case object Cryptocurrency extends PaymentMethod
 
   //
   // EXERCISE 16
@@ -138,7 +151,7 @@ object types {
   // Create either a sum type or a product type (as appropriate) to represent an
   // employee at a company, which has a title, salary, name, and employment date.
   //
-  type Employee = ???
+  final case class Employee(title: String, salary: Double, name: String, employmentDate: LocalDate)
 
   //
   // EXERCISE 17
@@ -147,7 +160,13 @@ object types {
   // piece on a chess board, which could be a pawn, rook, bishop, knight,
   // queen, or king.
   //
-  type ChessPiece = ???
+  sealed trait ChessPiece
+  case object Pawn extends ChessPiece
+  case object Rook extends ChessPiece
+  case object Bishop extends ChessPiece
+  case object Knight extends ChessPiece
+  case object Queen extends ChessPiece
+  case object King extends ChessPiece
 
   //
   // EXERCISE 18
@@ -167,16 +186,21 @@ object functions {
   // Convert the following non-function into a function.
   //
   def parseInt1(s: String): Int = s.toInt
-  def parseInt2(s: String): ??? = ???
+  def parseInt2(s: String): Option[Int] = try Some(s.toInt) catch { case _: NumberFormatException => None }
 
   //
   // EXERCISE 2
   //
   // Convert the following non-function into a function.
   //
-  def arrayUpdate1[A](arr: Array[A], i: Int, f: A => A): Unit =
-    arr.update(i, f(arr(i)))
-  def arrayUpdate2[A](arr: Array[A], i: Int, f: A => A): ??? = ???
+  def arrayUpdate1[A](arr: Array[A], i: Int, f: A => A): Unit = arr.update(i, f(arr(i)))
+  def arrayUpdate2[A](arr: Array[A], i: Int, f: A => A): Option[Array[A]] =
+    if (i < 0 || i >= arr.length) None
+    else {
+      val clone = arr.clone()
+      clone(i) = f(arr(i))
+      Some(clone)
+    }
 
   //
   // EXERCISE 3
@@ -184,7 +208,7 @@ object functions {
   // Convert the following non-function into a function.
   //
   def divide1(a: Int, b: Int): Int = a / b
-  def divide2(a: Int, b: Int): ??? = ???
+  def divide2(a: Int, b: Int): Option[Int] = if (b == 0) None else Some(a / b)
 
   //
   // EXERCISE 4
@@ -197,7 +221,7 @@ object functions {
     id += 1
     newId
   }
-  def freshId2(/* ??? */): (Int, Int) = ???
+  def freshId2(id: Int): (Int, Int) = (id, id+1)
 
   //
   // EXERCISE 5
@@ -206,7 +230,7 @@ object functions {
   //
   import java.time.LocalDateTime
   def afterOneHour1: LocalDateTime = LocalDateTime.now.plusHours(1)
-  def afterOneHour2(/* ??? */): LocalDateTime = ???
+  def afterOneHour2(now: LocalDateTime): LocalDateTime = now.plusHours(1)
 
   //
   // EXERCISE 6
@@ -217,7 +241,8 @@ object functions {
     if (as.length == 0) println("Oh no, it's impossible!!!")
     as.head
   }
-  def head2[A](as: List[A]): ??? = ???
+  def head2[A](as: List[A]): Either[String, A] =
+    as.headOption.fold[Either[String, A]](Left("Oh no, it's impossible!!!"))(Right(_))
 
   //
   // EXERCISE 7
@@ -237,28 +262,31 @@ object functions {
     coffee
   }
   final case class Charge(account: Account, amount: Double)
-  def buyCoffee2(account: Account): (Coffee, Charge) = ???
+  def buyCoffee2(account: Account): (Coffee, Charge) = {
+    val c = Coffee()
+    (c, Charge(account, c.price))
+  }
 
   //
   // EXERCISE 8
   //
   // Implement the following function under the Scalazzi subset of Scala.
   //
-  def printLine(line: String): Unit = ???
+  def printLine(line: String): Unit = ()
 
   //
   // EXERCISE 9
   //
   // Implement the following function under the Scalazzi subset of Scala.
   //
-  def readLine: String = ???
+  def readLine: String = ""
 
   //
   // EXERCISE 10
   //
   // Implement the following function under the Scalazzi subset of Scala.
   //
-  def systemExit(code: Int): Unit = ???
+  def systemExit(code: Int): Unit = ()
 
   //
   // EXERCISE 11
@@ -272,8 +300,14 @@ object functions {
     println("For help on a command, type `help <command>`")
     println("To exit the help page, type `exit`.")
   }
-  def printer2[A](println: String => A, combine: (A, A) => A): A =
-    ???
+  def printer2[A](println: String => A, combine: (A, A) => A): A = {
+    val a1 = println("Welcome to the help page!")
+    val a2 = println("To list commands, type `commands`.")
+    val a3 = println("For help on a command, type `help <command>`")
+    val a4 = println("To exit the help page, type `exit`.")
+
+    combine(a1, combine(a2, combine(a3, a4)))
+  }
 
   //
   // EXERCISE 12
