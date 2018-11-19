@@ -428,7 +428,7 @@ object poly_functions {
   // `snd` that returns the second element out of any pair of `A` and `B`.
   //
   object snd {
-    def apply[A, B](t: (A, B)): B = ???
+    def apply[A, B](t: (A, B)): B = t._2
   }
   snd((1, "foo")) // "foo"
   snd((true, List(1, 2, 3))) // List(1, 2, 3)
@@ -441,8 +441,8 @@ object poly_functions {
   // `A` the specified number of times.
   //
   object repeat {
-    def apply[A](n: Int)(a: A, f: A => A): A =
-      ???
+    @annotation.tailrec
+    def apply[A](n: Int)(a: A, f: A => A): A = if (n == 0) a else repeat(n-1)(f(a), f)
   }
   repeat[   Int](100)( 0, _ +   1) // 100
   repeat[String]( 10)("", _ + "*") // "**********"
@@ -452,41 +452,33 @@ object poly_functions {
   //
   // Count the number of unique implementations of the following method.
   //
-  def countExample1[A, B](a: A, b: B): Either[A, B] = ???
-  val countExample1Answer = ???
+  def countExample1[A, B](a: A, b: B): Either[A, B] = Left(a)
+  val countExample1Answer = 2
 
   //
   // EXERCISE 4
   //
   // Count the number of unique implementations of the following method.
   //
-  def countExample2[A, B](f: A => B, g: A => B, a: A): B =
-    ???
-  val countExample2Answer = ???
+  def countExample2[A, B](f: A => B, g: A => B, a: A): B = f(a)
+  val countExample2Answer = 2
 
   //
   // EXERCISE 5
   //
   // Implement the function `groupBy1`.
   //
-  val Data =
-    "poweroutage;2018-09-20;level=20" :: Nil
-  val By: String => String =
-    (data: String) => data.split(";")(1)
+  val Data = "poweroutage;2018-09-20;level=20" :: Nil
+  val By: String => String = (data: String) => data.split(";")(1)
+
   val Reducer: (String, List[String]) => String =
-    (date, events) =>
-      "On date " +
-        date + ", there were " +
-        events.length + " power outages"
-  val Expected =
-    Map("2018-09-20" ->
-      "On date 2018-09-20, there were 1 power outages")
-  def groupBy1(
-    l: List[String],
-    by: String => String)(
-      reducer: (String, List[String]) => String):
-      Map[String, String] =
-        ???
+    (date, events) => "On date " + date + ", there were " + events.length + " power outages"
+
+  val Expected = Map("2018-09-20" -> "On date 2018-09-20, there were 1 power outages")
+
+  def groupBy1(l: List[String], by: String => String)(reducer: (String, List[String]) => String): Map[String, String] =
+    l.groupBy(by).map { case (k, v) => k -> reducer(k, v) }
+
   // groupBy1(Data, By)(Reducer) == Expected
 
   //
@@ -496,7 +488,8 @@ object poly_functions {
   // the polymorphic function. Compare to the original.
   //
   object groupBy2 {
-    ???
+    def apply[A, B, C](l: List[A], by: A => B)(reducer: (B, List[A]) => C): Map[B, C] =
+      l.groupBy(by).map { case (k, v) => k -> reducer(k, v) }
   }
 }
 
