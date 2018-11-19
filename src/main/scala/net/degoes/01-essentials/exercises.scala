@@ -401,9 +401,9 @@ object higher_order {
         case Left(e1) =>
           r(e1).run(in) match {
             case Left(e2) => Left(e2)
-            case Right((s, b)) => Right((s, Right(b)))
+            case Right((in, b)) => Right((in, Right(b)))
           }
-        case Right((s, a)) => Right((s, Left(a)))
+        case Right((in, a)) => Right((in, Left(a)))
       }
     }
 
