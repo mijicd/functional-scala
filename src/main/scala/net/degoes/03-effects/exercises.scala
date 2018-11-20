@@ -241,10 +241,6 @@ object zio_values {
 }
 
 object zio_composition {
-  implicit class FixMe[A](a: A) {
-    def ?[B] = ???
-  }
-
   //
   // EXERCISE 1
   //
@@ -252,7 +248,7 @@ object zio_composition {
   // integer into its string rendering using the `map` method of the `IO`
   // object.
   //
-  (IO.point(42) ? : IO[Nothing, String])
+  IO.point(42).map(_.toString) : IO[Nothing, String]
 
   //
   // EXERCISE 2
@@ -261,7 +257,7 @@ object zio_composition {
   // integer error into its string rendering using the `leftMap` method of the
   // `IO` object.
   //
-  (IO.fail(42) ? : IO[String, Nothing])
+  IO.fail(42).leftMap(_.toString) : IO[String, Nothing]
 
   //
   // EXERCISE 3
@@ -271,16 +267,20 @@ object zio_composition {
   //
   val ioX: IO[Nothing, Int] = IO.point(42)
   val ioY: IO[Nothing, Int] = IO.point(58)
-  val ioXPlusY: IO[Nothing, Int] = ioX.flatMap(???)
+  val ioXPlusY: IO[Nothing, Int] =
+    for {
+      x <- ioX
+      y <- ioY
+    } yield x + y
 
   //
   // EXERCISE 4
   //
   // Using the `flatMap` method of `IO`, implement `ifThenElse`.
   //
-  def ifThenElse[E, A](bool: IO[E, Boolean])(
-    ifTrue: IO[E, A], ifFalse: IO[E, A]): IO[E, A] =
-      ???
+  def ifThenElse[E, A](bool: IO[E, Boolean])(ifTrue: IO[E, A], ifFalse: IO[E, A]): IO[E, A] =
+    bool.flatMap(v => if (v) ifTrue else ifFalse)
+
   val exampleIf = ifThenElse(IO.point(true))(IO.point("It's true!"), IO.point("It's false!"))
 
   //
@@ -310,8 +310,17 @@ object zio_composition {
       (read().toInt << 24))
     }
   }
-  def decode2[E](read: IO[E, Byte]): IO[E, Either[Byte, Int]] =
-    ???
+  def decode2[E](read: IO[E, Byte]): IO[E, Either[Byte, Int]] = {
+    def pack(shift: Int): IO[E, Int] = read.map(_.toInt << (8 * shift))
+
+    def decode(b: Byte): IO[E, Either[Byte, Int]] =
+      if (b < 0) IO.now(Left(b)) else IO.traverse(1 to 3)(pack).map(bs => Right(bs.sum + b.toInt))
+
+    for {
+      b <- read
+      r <- decode(b)
+    } yield r
+  }
 
   //
   // EXERCISE 7
@@ -326,8 +335,12 @@ object zio_composition {
       case _ => None
     }
   }
-  def getName2[E](print: String => IO[E, String], read: IO[E, String]): IO[E, Option[String]] =
-    ???
+  def getName2[E](print: String => IO[E, Unit], read: IO[E, String]): IO[E, Option[String]] =
+    for {
+      _    <- print("Do you want to enter your name?")
+      ans  <- read.map(_.toLowerCase.take(1))
+      name <- if (ans == "y") read.map(Some(_)) else IO.now(None)
+    } yield name
 
 
   //
@@ -338,7 +351,7 @@ object zio_composition {
   def forever1(action: () => Unit): Unit =
     while (true) action()
   def forever2[A](action: IO[Nothing, A]): IO[Nothing, Nothing] =
-    ???
+    action *> forever2(action)
 
   //
   // EXERCISE 9
@@ -352,7 +365,7 @@ object zio_composition {
       repeatN1(n - 1, action)
     }
   def repeatN2[E](n: Int, action: IO[E, Unit]): IO[E, Unit] =
-    ???
+    if (n <= 0) IO.unit else action *> repeatN2(n-1, action)
 
   //
   // EXERCISE 10
@@ -360,6 +373,7 @@ object zio_composition {
   // Translate the following expression into its `flatMap` equivalent.
   //
   IO.point(42) *> IO.point(19)
+  IO.point(42).flatMap(_ => IO.point(19))
 
   //
   // EXERCISE 11
@@ -367,6 +381,7 @@ object zio_composition {
   // Translate the following expression into its `flatMap` equivalent.
   //
   IO.point(42) <* IO.point(19)
+  IO.point(42).flatMap(v => IO.point(42).map(_ => v))
 
   //
   // EXERCISE 12
@@ -375,13 +390,10 @@ object zio_composition {
   // the `map` and `flatMap` methods of the `IO` object.
   //
   (IO.point(42) <* IO.point(19)) *> IO.point(1)
+  IO.point(42).flatMap(v => IO.point(19).map(_ => v)).flatMap(_ => IO.point(1))
 }
 
 object zio_failure {
-  implicit class FixMe[A](a: A) {
-    def ?[B] = ???
-  }
-
   //
   // EXERCISE 1
   //
@@ -389,8 +401,7 @@ object zio_failure {
   // represents a failure with a string error message, containing a user-
   // readable description of the failure.
   //
-  val stringFailure1: IO[String, Int] =
-    ???
+  val stringFailure1: IO[String, Int] = IO.fail("Some failure")
 
   //
   // EXERCISE 2
@@ -398,7 +409,7 @@ object zio_failure {
   // Using the `IO.fail` method, create an `IO[Int, String]` value that
   // represents a failure with an integer error code.
   //
-  val intFailure: IO[Int, String] = ???
+  val intFailure: IO[Int, String] = IO.fail(1)
 
   //
   // EXERCISE 3
@@ -406,7 +417,7 @@ object zio_failure {
   // Transform the error of `intFailure` into its string representation using
   // the `leftMap` method of `IO`.
   //
-  val stringFailure2: IO[String, String] = ???
+  val stringFailure2: IO[String, String] = intFailure.leftMap(_.toString)
 
   //
   // EXERCISE 4
@@ -416,8 +427,10 @@ object zio_failure {
   def accessArr1[A](i: Int, a: Array[A]): A =
     if (i < 0 || i >= a.length) throw new IndexOutOfBoundsException("The index " + i + " is out of bounds [0, " + a.length + ")")
     else a(i)
+
   def accessArr2[A](i: Int, a: Array[A]): IO[IndexOutOfBoundsException, A] =
-    ???
+    if (i < 0 || i >= a.length) IO.fail(new IndexOutOfBoundsException("The index " + i + " is out of bounds [0, " + a.length + ")"))
+    else IO.point(a(i))
 
   //
   // EXERCISE 5
@@ -426,8 +439,10 @@ object zio_failure {
   //
   def divide1(n: Int, d: Int): IO[ArithmeticException, Int] =
     if (d == 0) IO.fail(new ArithmeticException)
-    else IO.now(n / d)
-  def divide2(n: Int, d: Int): Int = ???
+    else IO.point(n / d)
+
+  def divide2(n: Int, d: Int): Int =
+    if (d == 0) throw new ArithmeticException else n / d
 
   //
   // EXERCISE 6
@@ -436,8 +451,8 @@ object zio_failure {
   //
   val recovered1: IO[Nothing, Int] =
     divide1(100, 0).attempt.map {
-      case Left(error) => ???
-      case Right(value) => ???
+      case Right(value) => value
+      case _            => -1
     }
 
   //
@@ -445,8 +460,7 @@ object zio_failure {
   //
   // Recover from a division by zero error by using `redeem`.
   //
-  val recovered2: IO[Nothing, Int] =
-    divide1(100, 0).redeem(???, ???)
+  val recovered2: IO[Nothing, Int] = divide1(100, 0).redeem(_ => IO.now(-1), IO.now)
 
   //
   // EXERCISE 8
@@ -456,7 +470,7 @@ object zio_failure {
   //
   val firstChoice: IO[ArithmeticException, Int] = divide1(100, 0)
   val secondChoice: IO[Nothing, Int] = IO.now(400)
-  val combined: IO[Nothing, Int] = ???
+  val combined: IO[Nothing, Int] = firstChoice.orElse(secondChoice)
 }
 
 object zio_effects {
