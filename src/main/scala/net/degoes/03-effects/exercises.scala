@@ -4,6 +4,7 @@ package net.degoes.effects
 
 import scalaz.zio._
 import scalaz.zio.console._
+
 import scala.concurrent.duration._
 
 object zio_background {
@@ -490,7 +491,7 @@ object zio_effects {
   // Using the `IO.sync` method, wrap Scala's `println` method to import it into
   // the world of pure functional programming.
   //
-  def putStrLn(line: String): IO[Nothing, Unit] = println ?
+  def putStrLn(line: String): IO[Nothing, Unit] = IO.sync(println(line))
 
   //
   // EXERCISE 2
@@ -498,7 +499,7 @@ object zio_effects {
   // Using the `IO.sync` method, wrap Scala's `readLine` method to import it
   // into the world of pure functional programming.
   //
-  val getStrLn: IO[Nothing, String] = readLine ?
+  val getStrLn: IO[Nothing, String] = IO.sync(readLine)
 
   //
   // EXERCISE 3
@@ -507,7 +508,7 @@ object zio_effects {
   // import it into the world of pure functional programming.
   //
   def readFile1(file: File): IO[Exception, List[String]] =
-    Source.fromFile(file).getLines.toList ?
+    IO.syncException(Source.fromFile(file).getLines.toList)
 
   //
   // EXERCISE 4
@@ -516,7 +517,7 @@ object zio_effects {
   // import it into the world of pure functional programming.
   //
   def readFile2(file: File): IO[Throwable, List[String]] =
-    Source.fromFile(file).getLines.toList ?
+    IO.syncThrowable(Source.fromFile(file).getLines.toList)
 
   //
   // EXERCISE 5
@@ -526,7 +527,9 @@ object zio_effects {
   //
   import java.io.IOException
   def readFile3(file: File): IO[IOException, List[String]] =
-    Source.fromFile(file).getLines.toList ?
+    IO.syncCatch(Source.fromFile(file).getLines.toList) {
+      case ex: IOException => ex
+    }
 
   //
   // EXERCISE 6
@@ -534,7 +537,7 @@ object zio_effects {
   // Identify the correct method and error type to import `System.nanoTime`
   // safely into the world of pure functional programming.
   //
-  val nanoTime: IO[???, Long] = System.nanoTime() ?
+  val nanoTime: IO[Nothing, Long] = IO.sync(System.nanoTime())
 
   //
   // EXERCISE 7
@@ -543,7 +546,7 @@ object zio_effects {
   // safely into the world of pure functional programming.
   //
   def sysExit(code: Int): IO[SecurityException, Nothing] =
-    System.exit(code) ?
+    IO.syncCatch(System.exit(code)) { case ex: SecurityException => ex } *> IO.never
 
   //
   // EXERCISE 8
@@ -551,8 +554,8 @@ object zio_effects {
   // Identify the correct method, error, and value type to import
   // `Array.update` safely into the world of pure functional programming.
   //
-  def arrayUpdate[A](a: Array[A], i: Int, f: A => A): IO[???, ???] =
-    a.update(i, f(a(i))) ?
+  def arrayUpdate[A](a: Array[A], i: Int, f: A => A): IO[ArrayIndexOutOfBoundsException, Unit] =
+    IO.syncCatch(a.update(i, f(a(i)))) { case ex: ArrayIndexOutOfBoundsException => ex }
 
   //
   // EXERCISE 9
@@ -562,9 +565,14 @@ object zio_effects {
   //
   val scheduledExecutor = Executors.newScheduledThreadPool(1)
   def sleep(l: Long, u: TimeUnit): IO[Nothing, Unit] =
-    scheduledExecutor.schedule(new Runnable {
-      def run(): Unit = ???
-    }, l, u) ?
+    IO.async[Nothing, Unit] { cb =>
+      val runnable = new Runnable {
+        def run(): Unit = cb(ExitResult.Completed(()))
+      }
+
+      scheduledExecutor.schedule(runnable, l, u)
+    }
+
 
   //
   // EXERCISE 10
@@ -573,7 +581,9 @@ object zio_effects {
   //
   def readChunk(success: Array[Byte] => Unit, failure: Throwable => Unit): Unit = ???
   val readChunkIO: IO[Throwable, Array[Byte]] =
-    ???
+    IO.async[Throwable, Array[Byte]] { cb =>
+      readChunk(bytes => cb(ExitResult.Completed(bytes)), error => cb(ExitResult.Failed(error)))
+    }
 
   //
   // EXERCISE 11
@@ -594,7 +604,19 @@ object zio_effects {
     }
   }
   val playGame2: IO[Exception, Unit] =
-    ???
+    for {
+      number <- IO.sync(scala.util.Random.nextInt(5))
+      _      <- putStrLn("Enter a number between 0 - 5: ")
+      guess  <- getStrLn
+      _      <- scala.util.Try(guess.toInt).toOption match {
+                  case None =>
+                    putStrLn("You didn't enter an integer!") *> playGame2
+                  case Some(guess) if guess == number =>
+                    putStrLn("You guessed right! The number was " + number)
+                  case _ =>
+                    putStrLn("You guessed wrong! The number was " + number)
+                }
+    } yield ()
 }
 
 object zio_concurrency {
