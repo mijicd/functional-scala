@@ -221,7 +221,7 @@ object zio_values {
   // Using the `IO.now` method, lift the integer `2` into a strictly-evaluated
   // `IO`.
   //
-  val ioInteger: IO[Nothing, Int] = ???
+  val ioInteger: IO[Nothing, Int] = IO.now(2)
 
   //
   // EXERCISE 2
@@ -229,7 +229,7 @@ object zio_values {
   // Using the `IO.point` method, lift the string "Functional Scala" into a
   // lazily-evaluated `IO`.
   //
-  val ioString: IO[Nothing, String] = ???
+  val ioString: IO[Nothing, String] = IO.point("Functional Scala")
 
   //
   // EXERCISE 3
@@ -237,8 +237,7 @@ object zio_values {
   // Using the `IO.fail` method to lift the string "Bad Input" into a failed
   // `IO`.
   //
-  val failedInput: IO[String, Nothing] =
-    ???
+  val failedInput: IO[String, Nothing] = IO.fail("Bad Input")
 }
 
 object zio_composition {
