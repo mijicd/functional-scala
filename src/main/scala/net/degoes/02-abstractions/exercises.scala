@@ -5,6 +5,8 @@ package net.degoes.abstractions
 import scalaz._
 import Scalaz._
 
+import scala.concurrent.Future
+
 object algebra {
   type ??? = Nothing
 
@@ -215,7 +217,10 @@ object functor {
   implicit val BTreeFunctor: Functor[BTree] =
     new Functor[BTree] {
       def map[A, B](fa: BTree[A])(f: A => B): BTree[B] =
-        ???
+        fa match {
+          case Fork(left, right) => Fork(map(left)(f), map(right)(f))
+          case Leaf(a) => Leaf(f(a))
+        }
     }
 
   //
@@ -223,7 +228,9 @@ object functor {
   //
   // Define an instance of `Functor` for `Nothing`.
   //
-  implicit val NothingFunctor: Functor[Nothing] = ???
+  implicit val NothingFunctor: Functor[Nothing] = new Functor[Nothing] {
+    def map[A, B](fa: Nothing)(f: A => B): Nothing = fa
+  }
 
   //
   // EXERCISE 3
@@ -233,12 +240,17 @@ object functor {
   def ParserFunctor[E]: Functor[Parser[E, ?]] =
     new Functor[Parser[E, ?]] {
       def map[A, B](fa: Parser[E, A])(f: A => B): Parser[E, B] =
-         ???
+        Parser { input =>
+          fa.run(input) match {
+            case Left(e) => Left(e)
+            case Right((input, a)) => Right((input, f(a)))
+          }
+        }
     }
   final case class Parser[+E, +A](run: String => Either[E, (String, A)])
   object Parser {
     final def fail[E](e: E): Parser[E, Nothing] =
-      Parser(input => Left(e))
+      Parser(_ => Left(e))
 
     final def point[A](a: => A): Parser[Nothing, A] =
       Parser(input => Right((input, a)))
@@ -257,8 +269,7 @@ object functor {
   case class DataType[A](f: A => A)
   implicit val DataTypeFunctor: Functor[DataType] =
     new Functor[DataType] {
-      def map[A, B](fa: DataType[A])(f: A => B): DataType[B] =
-        ???
+      def map[A, B](fa: DataType[A])(f: A => B): DataType[B] = ???
     }
 
   //
@@ -307,7 +318,11 @@ object functor {
   //
   // Define a natural transformation between `List` and `Option`.
   //
-  val ListToOption: List ~> Option = ???
+  val ListToOption: List ~> Option =
+    new NaturalTransformation[List, Option] {
+      override def apply[A](fa: List[A]): Option[A] = fa.headOption
+    }
+
   ListToOption(List(1, 2, 3))
   ListToOption(List("foo", "bar", "baz"))
 
@@ -317,10 +332,13 @@ object functor {
   // Define a natural transformation between `Either[Throwable, ?]` and
   // `Future`.
   //
-  val EitherToFuture: Either[Throwable, ?] ~> scala.concurrent.Future =
-    new NaturalTransformation[Either[Throwable, ?], scala.concurrent.Future] {
-      def apply[A](fa: Either[Throwable, A]): scala.concurrent.Future[A] =
-        ???
+  val EitherToFuture: Either[Throwable, ?] ~> Future =
+    new NaturalTransformation[Either[Throwable, ?], Future] {
+      def apply[A](fa: Either[Throwable, A]): Future[A] =
+        fa match {
+          case Left(t) => Future.failed(t)
+          case Right(a) => Future.successful(a)
+        }
     }
 
   //
@@ -339,7 +357,10 @@ object functor {
         def map[A, B](fa: Option[A])(f: A => B) = fa.map(f)
 
         def zip[A, B](l: Option[A], r: Option[B]): Option[(A, B)] =
-          ???
+          (l, r) match {
+            case (Some(lv), Some(rv)) => Some((lv, rv))
+            case _ => None
+          }
       }
   }
   implicit class ZipSyntax[F[_], A](left: F[A]) {
@@ -371,7 +392,12 @@ object functor {
         ParserFunctor.map(fa)(f)
 
       def zip[A, B](l: Parser[E, A], r: Parser[E, B]): Parser[E, (A, B)] =
-        ???
+        Parser { input =>
+          for {
+            lr <- l.run(input)
+            rr <- r.run(lr._1)
+          } yield (rr._1, (lr._2, rr._2))
+        }
     }
 
   //
@@ -386,8 +412,7 @@ object functor {
 
       def map[A, B](fa: Future[A])(f: A => B): Future[B] = fa.map(f)
 
-      def zip[A, B](l: Future[A], r: Future[B]): Future[(A, B)] =
-        ???
+      def zip[A, B](l: Future[A], r: Future[B]): Future[(A, B)] = l.zip(r)
     }
 
   //
@@ -397,9 +422,13 @@ object functor {
   //
   val OptionApplicative: Applicative[Option] =
     new Applicative[Option] {
-      def point[A](a: => A): Option[A] = ???
+      def point[A](a: => A): Option[A] = Some(a)
 
-      def zip[A, B](fa: Option[A], fb: Option[B]): Option[(A, B)] = ???
+      def zip[A, B](fa: Option[A], fb: Option[B]): Option[(A, B)] =
+        (fa, fb) match {
+          case (Some(a), Some(b)) => Some((a, b))
+          case _                  => None
+        }
 
       final def ap[A, B](fa: => Option[A])(f: => Option[A => B]): Option[B] =
         zip(f, fa).map(t => t._1(t._2))
@@ -414,10 +443,8 @@ object functor {
   //
   val example1 = (Option(3) |@| Option(5))(_ + _)
   val example2 = zip(Option(3), Option("foo")) : Option[(Int, String)]
-  def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] =
-    ???
-  def ap2[F[_]: Zip, A, B](fa: F[A], fab: F[A => B]): F[B] =
-    ???
+  def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r) { (_, _) }
+  def ap2[F[_]: Zip, A, B](fa: F[A], fab: F[A => B]): F[B] = ???
 
   //
   // EXERCISE 16
@@ -426,8 +453,7 @@ object functor {
   //
   def ApplicativeParser[E]: Applicative[Parser[E, ?]] =
     new Applicative[Parser[E, ?]] {
-      def point[A](a: => A): Parser[E, A] =
-        ???
+      def point[A](a: => A): Parser[E, A] = Parser { in => Right((in, a)) }
 
       def zip[A, B](fa: Parser[E, A], fb: Parser[E, B]): Parser[E, (A, B)] =
         ZipParser.zip(fa, fb)
@@ -443,11 +469,13 @@ object functor {
   //
   implicit val MonadBTree: Monad[BTree] =
     new Monad[BTree] {
-      def point[A](a: => A): BTree[A] =
-        ???
+      def point[A](a: => A): BTree[A] = Leaf(a)
 
       def bind[A, B](fa: BTree[A])(f: A => BTree[B]): BTree[B] =
-        ???
+        fa match {
+          case Leaf(a) => f(a)
+          case Fork(l, r) => Fork(bind(l)(f), bind(r)(f))
+        }
     }
 
   //
@@ -457,11 +485,15 @@ object functor {
   //
   implicit def MonadParser[E]: Monad[Parser[E, ?]] =
     new Monad[Parser[E, ?]] {
-      def point[A](a: => A): Parser[E, A] =
-        ???
+      def point[A](a: => A): Parser[E, A] = Parser { in => Right((in, a)) }
 
       def bind[A, B](fa: Parser[E, A])(f: A => Parser[E, B]): Parser[E, B] =
-        ???
+        Parser { in =>
+          fa.run(in) match {
+            case Left(e) => Left(e)
+            case Right((in, a)) => f(a).run(in)
+          }
+        }
     }
 
   //
@@ -521,10 +553,24 @@ object parser {
       flatMap(f.andThen(Parser.point[B](_)))
 
     def flatMap[E1 >: E, B](f: A => Parser[E1, B]): Parser[E1, B] =
-      ???
+      Parser { in =>
+        run(in) match {
+          case Left(e) => Left(e)
+          case Right((in, a)) => f(a).run(in)
+        }
+      }
 
     def orElse[E2, B](that: => Parser[E2, B]): Parser[E2, Either[A, B]] =
-      ???
+      Parser { input =>
+        run(input) match {
+          case Left(_) =>
+            that.run(input) match {
+              case Left(e2) => Left(e2)
+              case Right((input, b)) => Right((input, Right(b)))
+            }
+          case Right((input, a)) => Right((input, Left(a)))
+        }
+      }
 
     def filter[E1 >: E](e0: E1)(f: A => Boolean): Parser[E1, A] =
       Parser(input =>
@@ -534,7 +580,7 @@ object parser {
         })
 
     def | [E2, A1 >: A](that: => Parser[E2, A1]): Parser[E2, A1] =
-      (self orElse (that)).map(_.merge)
+      (self orElse that).map(_.merge)
 
     def rep: Parser[E, List[A]] =
       ((self.map(List(_)) | Parser.point[List[A]](Nil)) ~ rep).map(t => t._1 ++ t._2)
@@ -556,7 +602,7 @@ object parser {
       Parser(input => Left(e))
 
     def point[A](a: => A): Parser[Nothing, A] =
-      ???
+      Parser(input => Right(input -> a))
 
     def maybeChar: Parser[Nothing, Option[Char]] =
       char(()) ?
@@ -621,10 +667,16 @@ object foldable {
   implicit val FoldableBTree: Foldable[BTree] =
     new Foldable[BTree] {
       def foldMap[A, B: Monoid](fa: BTree[A])(f: A => B): B =
-        ???
+        fa match {
+          case Leaf(a) => f(a)
+          case Fork(l, r) => foldMap(l)(f) |+| foldMap(r)(f)
+        }
 
       def foldRight[A, B](fa: BTree[A], z: => B)(f: (A, => B) => B): B =
-        ???
+        fa match {
+          case Leaf(a) => f(a, z)
+          case Fork(l, r) => foldRight(l, foldRight(r, z)(f))(f)
+        }
     }
   val btree: BTree[String] = Fork(Leaf("foo"), Fork(Leaf("bar"), Leaf("baz")))
 
@@ -642,9 +694,11 @@ object foldable {
   //
   implicit lazy val TraverseBTree: Traverse[BTree] =
     new Traverse[BTree] {
-      def traverseImpl[G[_]: Applicative, A, B](
-        fa: BTree[A])(f: A => G[B]): G[BTree[B]] =
-          ???
+      def traverseImpl[G[_]: Applicative, A, B](fa: BTree[A])(f: A => G[B]): G[BTree[B]] =
+        fa match {
+          case Leaf(a) => f(a).map(Leaf(_))
+          case Fork(l, r) => (traverseImpl(l)(f) |@| traverseImpl(r)(f)) { Fork(_, _) }
+        }
     }
 
   //
