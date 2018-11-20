@@ -8,14 +8,14 @@ import scala.concurrent.duration._
 
 object zio_background {
   sealed trait Program[A] { self =>
-    final def *> [B](that: Program[B]): Program[B] = self.seq(that).map(_._2)
+    final def *> [B](that: Program[B]): Program[B] = self.zip(that).map(_._2)
 
-    final def <* [B](that: Program[B]): Program[A] = self.seq(that).map(_._1)
+    final def <* [B](that: Program[B]): Program[A] = self.zip(that).map(_._1)
 
     final def map[B](f: A => B): Program[B] =
       flatMap(f andThen (Program.point(_)))
 
-    final def seq[B](that: Program[B]): Program[(A, B)] =
+    final def zip[B](that: Program[B]): Program[(A, B)] =
       for {
         a <- self
         b <- that
@@ -60,7 +60,12 @@ object zio_background {
   //
   // Rewrite `yourName1` to use a for comprehension.
   //
-  lazy val yourName2: Program[Unit] = ???
+  lazy val yourName2: Program[Unit] =
+    for {
+      _    <- writeLine("What is your name?")
+      name <- readLine
+      _    <- writeLine("Hello, " + name + ", good to meet you!")
+    } yield name
 
   //
   // EXERCISE 2
@@ -68,11 +73,13 @@ object zio_background {
   // Rewrite `yourName2` using the helper function `getName`, which shows how
   // to create larger programs from smaller programs.
   //
-  lazy val yourName3: Program[Unit] = ???
+  lazy val yourName3: Program[Unit] =
+    for {
+      name <- getName
+      _    <- writeLine("Hello, " + name + ", good to meet you!")
+    } yield name
 
-  val getName: Program[String] =
-    writeLine("What is your name?").flatMap(_ => readLine)
-
+  val getName: Program[String] = writeLine("What is your name?").flatMap(_ => readLine)
   //
   // EXERCISE 3
   //
@@ -80,7 +87,15 @@ object zio_background {
   // `Program[A]` into `A`. You can use this procedure to "run" programs.
   //
   def interpret[A](program: Program[A]): A =
-    ???
+    program match {
+      case Program.Return(a) => a()
+      case Program.WriteLine(line, next) =>
+        println(line)
+        interpret(next)
+      case Program.ReadLine(next) =>
+        val line = scala.io.StdIn.readLine()
+        interpret(next(line))
+    }
 
   //
   // EXERCISE 4
@@ -92,7 +107,7 @@ object zio_background {
     programs match {
       case Nil => Program.point(Nil)
       case p :: ps =>
-        p.seq(sequence(ps)).map { case (a, as) => a :: as }
+        p.zip(sequence(ps)).map { case (a, as) => a :: as }
     }
 
   //
@@ -102,9 +117,11 @@ object zio_background {
   // "for loop" that collects the result of each iteration.
   //
   def forEach[A, B](values: List[A])(body: A => Program[B]): Program[List[B]] =
-    ???
+    sequence(values.map(body(_)))
+
   def forEach[A, B](as: A*)(body: A => Program[B]): Program[List[B]] =
     forEach(as.toList)(body)
+
   val example: Program[List[Unit]] =
     forEach("Hello", "World", "Each", "On", "Its", "Own", "Line")(text =>
       writeLine(text)
@@ -133,8 +150,27 @@ object zio_background {
         ageExplainer1()
     }
   }
-  def ageExplainer2: Program[Unit] =
-    ???
+
+  def ageExplainer2: Program[Unit] = {
+    def parseInt(line: String): Option[Int] = scala.util.Try(line.toInt).toOption
+
+    def messageForAge(age: Int): String =
+      if (age < 12) "You are a kid"
+      else if (age < 20) "You are a teenager"
+      else if (age < 30) "You are a grownup"
+      else if (age < 50) "You are an adult"
+      else if (age < 80) "You are a mature adult"
+      else if (age < 100) "You are elderly"
+      else "You are probably lying."
+
+    def retry: Program[Unit] = writeLine("That's not an age, try again") *> ageExplainer2
+
+    for {
+      _    <- writeLine("What is your age?")
+      line <- readLine
+      _    <- parseInt(line).fold(retry)(writeLine _ compose messageForAge)
+    } yield ()
+  }
 }
 
 object zio_type {

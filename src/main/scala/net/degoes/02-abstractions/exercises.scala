@@ -727,40 +727,24 @@ object optics {
   case object Poland               extends Country
   sealed trait UKRegion
 
-  case class Org(name: String, address: Address, site: Site)
+  final case class Org(name: String, address: Address, site: Site)
   object Org {
-    val site: Lens[Org, Site] =
-      Lens[Org, Site](_.site, s => _.copy(site = s))
+    val site: Lens[Org, Site] = Lens[Org, Site](_.site, s => _.copy(site = s))
   }
 
-  case class Address(
-    number: String,
-    street: String,
-    postalCode: String,
-    country: Country)
+  final case class Address(number: String, street: String, postalCode: String, country: Country)
   object Address {
-    val country: Lens[Address, Country] =
-      Lens[Address, Country](_.country, c => _.copy(country = c))
+    val country: Lens[Address, Country] = Lens[Address, Country](_.country, c => _.copy(country = c))
   }
 
-  case class Site(
-    manager: Employee,
-    address: Address,
-    employees: Set[Employee])
+  final case class Site(manager: Employee, address: Address, employees: Set[Employee])
   object Site {
-    val address: Lens[Site, Address] =
-      Lens[Site, Address](_.address, a => _.copy(address = a))
-    val manager: Lens[Site, Employee] =
-      Lens[Site, Employee](_.manager, m => _.copy(manager = m))
+    val address: Lens[Site, Address] = Lens[Site, Address](_.address, a => _.copy(address = a))
+    val manager: Lens[Site, Employee] = Lens[Site, Employee](_.manager, m => _.copy(manager = m))
   }
-  case class Employee(
-    name: String,
-    dob: java.time.Instant,
-    salary: BigDecimal,
-    address: Address)
+  final case class Employee(name: String, dob: java.time.Instant, salary: BigDecimal, address: Address)
   object Employee {
-    val salary: Lens[Employee, BigDecimal] =
-      Lens[Employee, BigDecimal](_.salary, s => _.copy(salary = s))
+    val salary: Lens[Employee, BigDecimal] = Lens[Employee, BigDecimal](_.salary, s => _.copy(salary = s))
   }
 
   lazy val org: Org = ???
@@ -770,12 +754,8 @@ object optics {
   //
   // Implement the `⋅` method of `Lens` for `Lens`.
   //
-  final case class Lens[S, A](
-    get: S => A,
-    set: A => (S => S)
-  ) { self =>
-    def ⋅ [B](that: Lens[A, B]): Lens[S, B] =
-      ???
+  final case class Lens[S, A](get: S => A, set: A => S => S) { self =>
+    def ⋅ [B](that: Lens[A, B]): Lens[S, B] = Lens(that.get compose self.get, b => s => self.set(that.set(b)(self.get(s)))(s))
 
     def ⋅ [B](that: Optional[A, B]): Optional[S, B] = ???
 
@@ -801,18 +781,16 @@ object optics {
   import Org.site
   import Site.manager
   import Employee.salary
-  val org2_lens: Org = ???
+  val org2_lens: Org = (site ⋅ manager ⋅ salary).updated(_ * 0.95)(org)
+
 
   //
   // EXERCISE 3
   //
   // Implement `⋅` for `Prism` for `Prism`.
   //
-  final case class Prism[S, A](
-    get: S => Option[A],
-    set: A => S) { self =>
-    def ⋅ [B](that: Prism[A, B]): Prism[S, B] =
-      ???
+  final case class Prism[S, A](get: S => Option[A], set: A => S) { self =>
+    def ⋅ [B](that: Prism[A, B]): Prism[S, B] = Prism(s => self.get(s).flatMap(that.get), self.set compose that.set)
 
     def ⋅ [B](that: Lens[A, B]): Optional[S, B] = ???
 
