@@ -121,9 +121,7 @@ object algebra {
     new Monoid[scala.util.Try[A]] {
       import scala.util.{Try, Success, Failure}
 
-      case object Zero extends Throwable
-
-      def zero: Try[A] = Failure(Zero)
+      def zero: Try[A] = Failure(ZeroThrowable)
 
       def append(l: Try[A], r: => Try[A]): Try[A] =
         (l, r) match {
@@ -266,37 +264,39 @@ object functor {
   //
   // Try to define an instance of `Functor` for the following data type.
   //
-  case class DataType[A](f: A => A)
-  implicit val DataTypeFunctor: Functor[DataType] =
-    new Functor[DataType] {
-      def map[A, B](fa: DataType[A])(f: A => B): DataType[B] = ???
-    }
+  // CONCLUSION: impossible to write
+  //
+  final case class DataType[A](f: A => A)
+  implicit val DataTypeFunctor: Functor[DataType] = ???
 
   //
   // EXERCISE 5
   //
   // Define an instance of `Functor` for `FunctorProduct`.
   //
-  case class FunctorProduct[F[_], G[_], A](l: F[A], r: G[A])
-  implicit def FunctorProductFunctor[F[_]: Functor, G[_]: Functor]:
-    Functor[FunctorProduct[F, G, ?]] =
-      new Functor[FunctorProduct[F, G, ?]] {
-        def map[A, B](fa: FunctorProduct[F, G, A])(f: A => B): FunctorProduct[F, G, B] =
-          ???
-      }
+  final case class FunctorProduct[F[_], G[_], A](l: F[A], r: G[A])
+  implicit def FunctorProductFunctor[F[_]: Functor, G[_]: Functor]: Functor[FunctorProduct[F, G, ?]] =
+    new Functor[FunctorProduct[F, G, ?]] {
+      def map[A, B](fa: FunctorProduct[F, G, A])(f: A => B): FunctorProduct[F, G, B] =
+        FunctorProduct(Functor[F].map(fa.l)(f), Functor[G].map(fa.r)(f))
+    }
 
   //
   // EXERCISE 6
   //
   // Define an instance of `Functor` for `FunctorSum`.
   //
-  case class FunctorSum[F[_], G[_], A](run: Either[F[A], G[A]])
-  implicit def FunctorSumFunctor[F[_]: Functor, G[_]: Functor]:
-    Functor[FunctorSum[F, G, ?]] =
-      new Functor[FunctorSum[F, G, ?]] {
-        def map[A, B](fa: FunctorSum[F, G, A])(f: A => B): FunctorSum[F, G, B] =
-          ???
+  final case class FunctorSum[F[_], G[_], A](run: Either[F[A], G[A]])
+  implicit def FunctorSumFunctor[F[_]: Functor, G[_]: Functor]: Functor[FunctorSum[F, G, ?]] =
+    new Functor[FunctorSum[F, G, ?]] {
+      def map[A, B](fa: FunctorSum[F, G, A])(f: A => B): FunctorSum[F, G, B] = {
+        val run = fa.run match {
+          case Left(l) => Left(Functor[F].map(l)(f))
+          case Right(r) => Right(Functor[G].map(r)(f))
+        }
+        FunctorSum(run)
       }
+    }
 
   //
   // EXERCISE 7
@@ -305,13 +305,12 @@ object functor {
   // e.g. Future[Option[A]], Future[Either[Error, Option[A]]]
   // Future[List[Either[Error, Option[A]]]]
   //
-  case class FunctorNest[F[_], G[_], A](run: F[G[A]])
-  implicit def FunctorNestFunctor[F[_]: Functor, G[_]: Functor]:
-    Functor[FunctorNest[F, G, ?]] =
-      new Functor[FunctorNest[F, G, ?]] {
-        def map[A, B](fa: FunctorNest[F, G, A])(f: A => B): FunctorNest[F, G, B] =
-          ???
-      }
+  final case class FunctorNest[F[_], G[_], A](run: F[G[A]])
+  implicit def FunctorNestFunctor[F[_]: Functor, G[_]: Functor]: Functor[FunctorNest[F, G, ?]] =
+    new Functor[FunctorNest[F, G, ?]] {
+      def map[A, B](fa: FunctorNest[F, G, A])(f: A => B): FunctorNest[F, G, B] =
+        FunctorNest(Functor[F].map(fa.run)(Functor[G].map(_)(f)))
+    }
 
   //
   // EXERCISE 8
@@ -354,7 +353,7 @@ object functor {
 
     implicit val ZipOption: Zip[Option] =
       new Zip[Option] {
-        def map[A, B](fa: Option[A])(f: A => B) = fa.map(f)
+        def map[A, B](fa: Option[A])(f: A => B): Option[B] = fa.map(f)
 
         def zip[A, B](l: Option[A], r: Option[B]): Option[(A, B)] =
           (l, r) match {
@@ -444,7 +443,7 @@ object functor {
   val example1 = (Option(3) |@| Option(5))(_ + _)
   val example2 = zip(Option(3), Option("foo")) : Option[(Int, String)]
   def zip[F[_]: Applicative, A, B](l: F[A], r: F[B]): F[(A, B)] = (l |@| r) { (_, _) }
-  def ap2[F[_]: Zip, A, B](fa: F[A], fab: F[A => B]): F[B] = ???
+  def ap2[F[_]: Zip, A, B](fa: F[A], fab: F[A => B]): F[B] = Zip[F].zip(fa, fab).map { case (a, ab) => ab(a) }
 
   //
   // EXERCISE 16
@@ -501,7 +500,7 @@ object functor {
   //
   // Define an instance of `Monad` for `Identity`.
   //
-  case class Identity[A](run: A)
+  final case class Identity[A](run: A)
   implicit val IdentityMonad: Monad[Identity] =
     new Monad[Identity] {
       def point[A](a: => A): Identity[A] =
@@ -631,7 +630,7 @@ object parser {
 
   // [1,2,3]
   sealed trait Error
-  case class ExpectedLit(char: Char) extends Error
+  final case class ExpectedLit(char: Char) extends Error
   case object ExpectedDigit extends Error
 
   val parser: Parser[Error, List[Int]] =
@@ -650,10 +649,9 @@ object foldable {
   //
   implicit val FoldableList: Foldable[List] = new Foldable[List] {
     def foldMap[A, B: Monoid](fa: List[A])(f: A => B): B =
-      ???
+      fa.foldLeft(Monoid[B].zero)((acc, a) => Monoid[B].append(acc, f(a)))
 
-    def foldRight[A, B](fa: List[A], z: => B)(f: (A, => B) => B): B =
-      ???
+    def foldRight[A, B](fa: List[A], z: => B)(f: (A, => B) => B): B = fa.foldRight(z)(f(_, _))
   }
 
   //
@@ -685,6 +683,8 @@ object foldable {
   //
   // Try to define an instance of `Foldable` for `A0 => ?`.
   //
+  // CONCLUSION: possible to write not useful instance
+  //
   implicit def FunctionFoldable[A0]: Foldable[A0 => ?] = ???
 
   //
@@ -706,21 +706,17 @@ object foldable {
   //
   // Try to define an instance of `Traverse` for `Parser[E, ?]`.
   //
-  case class Parser[+E, +A](run: String => Either[E, (String, A)])
-  implicit def TraverseParser[E]: Traverse[Parser[E, ?]] =
-    new Traverse[Parser[E, ?]] {
-       def traverseImpl[G[_]: Applicative, A, B](fa: Parser[E, A])(f: A => G[B]): G[Parser[E,B]] =
-         ???
-    }
+  // CONCLUSION: cannot traverse parsers.
+  //
+  final case class Parser[+E, +A](run: String => Either[E, (String, A)])
+  implicit def TraverseParser[E]: Traverse[Parser[E, ?]] = ???
 }
 
 object optics {
   sealed trait Country
   object Country {
     val usa: Prism[Country, Unit] =
-      Prism[Country, Unit](
-        _ match { case USA => Some(()); case _ => None },
-        _ => USA)
+      Prism[Country, Unit]({ case USA => Some(()); case _ => None }, _ => USA)
 
     val uk: Prism[Country, UKRegion] = ???
 
