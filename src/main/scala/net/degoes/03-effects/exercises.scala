@@ -2,6 +2,8 @@
 
 package net.degoes.effects
 
+import java.io.IOException
+
 import scalaz.zio._
 import scalaz.zio.console._
 
@@ -1058,17 +1060,12 @@ object zio_queue {
 }
 
 object zio_schedule {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   //
   // EXERCISE 1
   //
   // Using `Schedule.recurs`, create a schedule that recurs 5 times.
   //
-  val fiveTimes: Schedule[Any, Int] =
-    ???
+  val fiveTimes: Schedule[Any, Int] = Schedule.recurs(5)
 
   //
   // EXERCISE 2
@@ -1076,7 +1073,7 @@ object zio_schedule {
   // Using the `repeat` method of the `IO` object, repeat printing "Hello World"
   // five times to the console.
   //
-  val repeated1 = putStrLn("Hello World") ?
+  val repeated1: IO[IOException, Int] = putStrLn("Hello World").repeat(fiveTimes)
 
   //
   // EXERCISE 3
@@ -1084,8 +1081,7 @@ object zio_schedule {
   // Using `Schedule.spaced`, create a schedule that recurs forever every 1
   // second.
   //
-  val everySecond: Schedule[Any, Int] =
-    ???
+  val everySecond: Schedule[Any, Int] = Schedule.spaced(1.second)
 
   //
   // EXERCISE 4
@@ -1094,8 +1090,7 @@ object zio_schedule {
   // and the `everySecond` schedule, create a schedule that repeats fives times,
   // every second.
   //
-  val fiveTimesEverySecond =
-    ???
+  val fiveTimesEverySecond: Schedule[Any, (Int, Int)] = fiveTimes && everySecond
 
   //
   // EXERCISE 5
@@ -1103,7 +1098,7 @@ object zio_schedule {
   // Using the `repeat` method of the `IO` object, repeat the action
   // putStrLn("Hi hi") using `fiveTimesEverySecond`.
   //
-  val repeated2 = putStrLn("Hi hi") ?
+  val repeated2: IO[IOException, (Int, Int)] = putStrLn("Hi hi").repeat(fiveTimesEverySecond)
 
   //
   // EXERCISE 6
@@ -1112,8 +1107,7 @@ object zio_schedule {
   // schedule, and the `everySecond` schedule, create a schedule that repeats
   // fives times rapidly, and then repeats every second forever.
   //
-  val fiveTimesThenEverySecond =
-    ???
+  val fiveTimesThenEverySecond: Schedule[Any, Either[Int, Int]] = fiveTimes.andThen(everySecond)
 
   //
   // EXERCISE 7
@@ -1121,8 +1115,8 @@ object zio_schedule {
   // Using the `retry` method of the `IO` object, retry the following error
   // a total of five times.
   //
-  val error1 = IO.fail("Uh oh!")
-  val retried5 = error1 ?
+  val error1: IO[String, Nothing] = IO.fail("Uh oh!")
+  val retried5: IO[String, Nothing] = error1.retry(fiveTimes)
 
   //
   // EXERCISE 8
@@ -1131,8 +1125,7 @@ object zio_schedule {
   // and the `everySecond` schedule, create a schedule that repeats the minimum
   // of five times and every second.
   //
-  val fiveTimesOrEverySecond =
-    ???
+  val fiveTimesOrEverySecond: Schedule[Any, (Int, Int)] = fiveTimes || everySecond
 
   //
   // EXERCISE 9
@@ -1140,7 +1133,7 @@ object zio_schedule {
   // Using `Schedule.exponential`, create an exponential schedule that starts from
   // 10 milliseconds.
   //
-  val exponentialSchedule: Schedule[Any, Int] = ???
+  val exponentialSchedule: Schedule[Any, Duration] = Schedule.exponential(10.millis)
 
   //
   // EXERCISE 10
@@ -1148,7 +1141,7 @@ object zio_schedule {
   // Using the `jittered` method on `Schedule` objects, produced a jittered version of
   // `exponentialSchedule`.
   //
-  val jitteredExponential = exponentialSchedule ?
+  val jitteredExponential: Schedule[Any, Duration] = exponentialSchedule.jittered
 
   //
   // EXERCISE 11
@@ -1156,7 +1149,7 @@ object zio_schedule {
   // Using the `whileOutput` method on `Schedule`, produce a filtered schedule from
   // `Schedule.forever` that will halt when the number of recurrences exceeds 100.
   //
-  val oneHundred = Schedule.forever.whileOutput(???)
+  val oneHundred: Schedule[Any, Int] = Schedule.forever.whileOutput(_ <= 100)
 
   //
   // EXERCISE 12
@@ -1164,7 +1157,7 @@ object zio_schedule {
   // Using `Schedule.identity`, produce a schedule that recurs forever,
   // returning its inputs.
   //
-  def inputs[A]: Schedule[A, A] = ???
+  def inputs[A]: Schedule[A, A] = Schedule.identity[A]
 
   //
   // EXERCISE 13
@@ -1172,7 +1165,7 @@ object zio_schedule {
   // Using the `collect` method of `Schedule`, produce a schedule that recurs
   // forever, collecting its inputs into a list.
   //
-  def collectedInputs[A]: Schedule[A, List[A]] = inputs[A] ?
+  def collectedInputs[A]: Schedule[A, List[A]] = inputs[A].collect
 
   //
   // EXERCISE 14
@@ -1191,7 +1184,9 @@ object zio_schedule {
   // only do that for up to 100 times, and produce a list of the results.
   //
   def mySchedule[A]: Schedule[A, List[A]] =
-    ???
+    Schedule.exponential(10.millis).whileOutput(_.lt(60.seconds))
+      .andThen(Schedule.fixed(60.seconds) && Schedule.recurs(100))
+      .jittered *> collectedInputs
 }
 
 object zio_interop {
