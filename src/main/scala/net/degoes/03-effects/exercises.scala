@@ -979,8 +979,7 @@ object zio_queue {
   // Using the `Queue.bounded`, create a queue for `Int` values with a capacity
   // of 10.
   //
-  val makeQueue: IO[Nothing, Queue[Int]] =
-    ???
+  val makeQueue: IO[Nothing, Queue[Int]] = Queue.bounded(10)
 
   //
   // EXERCISE 2
@@ -990,7 +989,7 @@ object zio_queue {
   val offered1: IO[Nothing, Unit] =
     for {
       queue <- makeQueue
-      _     <- (queue ? : IO[Nothing, Unit])
+      _     <- queue.offer(1)
     } yield ()
 
   //
@@ -1002,7 +1001,7 @@ object zio_queue {
     for {
       queue <- makeQueue
       _     <- queue.offer(42)
-      value <- (queue ? : IO[Nothing, Int])
+      value <- queue.take
     } yield value
 
   //
@@ -1014,9 +1013,9 @@ object zio_queue {
   val offeredTaken1: IO[Nothing, (Int, Int)] =
     for {
       queue <- makeQueue
-      _     <- (??? : IO[Nothing, Unit]).fork
-      v1    <- (queue ? : IO[Nothing, Int])
-      v2    <- (queue ? : IO[Nothing, Int])
+      _     <- (queue.offer(2) *> queue.offer(3)).fork
+      v1    <- queue.take
+      v2    <- queue.take
     } yield (v1, v2)
 
   //
@@ -1029,8 +1028,8 @@ object zio_queue {
   val infiniteReader1: IO[Nothing, List[Unit]] =
     for {
       queue <- makeQueue
-      _     <- (??? : IO[Exception, Nothing]).fork
-      vs    <- (??? : IO[Nothing, List[Unit]])
+      _     <- queue.take.flatMap(i => putStrLn(i.toString)).forever.fork
+      vs    <- IO.traverse(1 to 100)(queue.offer)
     } yield vs
 
   //
@@ -1040,7 +1039,7 @@ object zio_queue {
   // that can atomically update the values of a counter.
   //
   sealed trait Message
-  case class Increment(amount: Int) extends Message
+  final case class Increment(amount: Int) extends Message
   val makeCounter: IO[Nothing, Message => IO[Nothing, Int]] =
     for {
       counter  <- Ref(0)
@@ -1053,7 +1052,7 @@ object zio_queue {
   val counterExample: IO[Nothing, Int] =
     for {
       counter <- makeCounter
-      _       <- IO.parAll(List.fill(100)(IO.traverse((0 to 100).map(Increment(_)))(counter)))
+      _       <- IO.parAll(List.fill(100)(IO.traverse((0 to 100).map(Increment))(counter)))
       value   <- counter(Increment(0))
     } yield value
 }
@@ -1299,8 +1298,4 @@ object zio_rts {
         _ <- putStrLn("Hello World!")
       } yield ()).redeemPure(_ => ExitStatus.ExitNow(1), _ => ExitStatus.ExitNow(0))
   }
-}
-
-object zio_advanced {
-
 }
