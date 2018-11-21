@@ -971,10 +971,6 @@ object zio_promise {
 }
 
 object zio_queue {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   //
   // EXERCISE 1
   //
@@ -1046,10 +1042,8 @@ object zio_queue {
     for {
       counter  <- Ref(0)
       mailbox  <- Queue.bounded[(Message, Promise[Nothing, Int])](100)
-      _        <- (mailbox.take ? : IO[Nothing, Fiber[Nothing, Nothing]])
-    } yield { (message: Message) =>
-      ???
-    }
+      _        <- mailbox.take.forever.fork
+    } yield (_: Message) => counter.update(_ + 1)
 
   val counterExample: IO[Nothing, Int] =
     for {
