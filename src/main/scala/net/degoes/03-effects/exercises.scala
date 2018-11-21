@@ -1190,10 +1190,6 @@ object zio_schedule {
 }
 
 object zio_interop {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   import scala.concurrent.Future
   import scalaz.zio.interop.future._
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -1203,8 +1199,8 @@ object zio_interop {
   //
   // Use `IO.fromFuture` method to convert the following `Future` into an `IO`.
   //
-  val future1 = () => Future.successful("Hello World")
-  val io1: IO[Throwable, String] = IO.fromFuture(???)(global)
+  def future1: () => Future[String] = () => Future.successful("Hello World")
+  val io1: IO[Throwable, String] = IO.fromFuture(future1)(global)
 
   //
   // EXERCISE 2
@@ -1212,7 +1208,7 @@ object zio_interop {
   // Use the `toFuture` method on `IO` to convert the following `io` to `Future`.
   //
   val io2: IO[Throwable, Int] = IO.point(42)
-  val future2: IO[Nothing, Future[Int]] = io2 ?
+  val future2: IO[Nothing, Future[Int]] = io2.toFuture
 
   //
   // EXERCISE 3
@@ -1220,8 +1216,8 @@ object zio_interop {
   // Use the Fiber.fromFuture` method to convert the following `Future` into
   // an `IO`.
   //
-  val future3 = () => Future.failed[Int](new Error("Uh ohs!"))
-  val fiber1: Fiber[Throwable, Int] = Fiber.fromFuture(???)(global)
+  val future3: () => Future[Int] = () => Future.failed[Int](new Error("Uh ohs!"))
+  val fiber1: Fiber[Throwable, Int] = Fiber.fromFuture(future3())(global)
 
   import scalaz.zio.interop.Task
   import scalaz.zio.interop.catz._
