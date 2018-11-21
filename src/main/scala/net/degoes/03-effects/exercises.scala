@@ -747,34 +747,6 @@ object zio_resources {
       IO.syncException(new InputStream(new FileInputStream(file)))
   }
 
-  object classic {
-    trait Handle
-    def openFile(file: String): Handle = ???
-    def closeFile(handle: Handle): Unit = ???
-    def readFile(handle: Handle): Array[Byte] = ???
-
-    // Classic paradigm for safe resource handling using
-    // try / finally:
-    def safeResource(file: String): Unit = {
-      var handle: Handle = null.asInstanceOf[Handle]
-
-      try {
-        handle = openFile(file)
-
-        readFile(handle)
-      } finally if (handle != null) closeFile(handle)
-    }
-
-    def finallyPuzzler(): Unit = {
-      try {
-        try throw new Error("e1")
-        finally throw new Error("e2")
-      } catch {
-        case e : Error => println(e)
-      }
-    }
-  }
-
   //
   // EXERCISE 1
   //
@@ -785,7 +757,7 @@ object zio_resources {
     try throw new Exception("Uh oh")
     finally println("On the way out...")
   val tryCatch2: IO[Exception, Unit] =
-    ???
+    IO.fail(new Exception("Uh oh")).ensuring(putStrLn("On the way out...").attempt.void)
 
   //
   // EXERCISE 2
@@ -793,31 +765,30 @@ object zio_resources {
   // Rewrite the `readFile1` function to use `bracket` so resources can be
   // safely cleaned up in the event of errors, defects, or interruption.
   //
-  def readFile1(file: File): IO[Exception, List[Byte]] = {
-    def readAll(is: InputStream, acc: List[Byte]): IO[Exception, List[Byte]] =
-      is.read.flatMap {
-        case None => IO.now(acc.reverse)
-        case Some(byte) => readAll(is, byte :: acc)
-      }
+  def readAll(is: InputStream, acc: List[Byte]): IO[Exception, List[Byte]] =
+    is.read.flatMap {
+      case None => IO.now(acc.reverse)
+      case Some(byte) => readAll(is, byte :: acc)
+    }
 
+  def readFile1(file: File): IO[Exception, List[Byte]] =
     for {
       stream <- InputStream.openFile(file)
       bytes  <- readAll(stream, Nil)
       _      <- stream.close
     } yield bytes
-  }
-  def readFile2(file: File): IO[Exception, List[Byte]] = ???
+
+  def readFile2(file: File): IO[Exception, List[Byte]] =
+    InputStream.openFile(file).bracket(_.close.attempt.void)(readAll(_, Nil))
 
   //
   // EXERCISE 3
   //
   // Implement the `tryCatchFinally` method using `bracket` or `ensuring`.
   //
-  def tryCatchFinally[E, A]
-    (try0: IO[E, A])
-    (catch0: PartialFunction[E, IO[E, A]])
-    (finally0: IO[Nothing, Unit]): IO[E, A] =
-      ???
+  def tryCatchFinally[E, A](try0: IO[E, A])
+                           (catch0: PartialFunction[E, IO[E, A]])
+                           (finally0: IO[Nothing, Unit]): IO[E, A] = try0.catchSome(catch0).ensuring(finally0)
 
   //
   // EXERCISE 4
@@ -836,8 +807,17 @@ object zio_resources {
       case e : java.io.IOException => Nil
     } finally if (fis != null) fis.close()
   }
-  def readFileTCF2(file: File): IO[Exception, List[Byte]] =
-    ???
+  def readFileTCF2(file: File): IO[Exception, List[Byte]] = {
+    def use(fis: FileInputStream): IO[Exception, List[Byte]] = {
+      val array = Array.ofDim[Byte](file.length.toInt)
+      fis.read(array)
+      IO.point(array.toList)
+    }
+
+    IO.point(new FileInputStream(file))
+      .bracket(fis => IO.point(fis.close()).attempt.void)(use)
+      .catchSome { case _: java.io.IOException => IO.now(Nil) }
+  }
 }
 
 object zio_ref {
