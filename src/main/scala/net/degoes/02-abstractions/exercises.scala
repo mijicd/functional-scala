@@ -2,6 +2,8 @@
 
 package net.degoes.abstractions
 
+import java.time.{Instant, LocalDate}
+
 import scalaz._
 import Scalaz._
 
@@ -718,13 +720,17 @@ object optics {
     val usa: Prism[Country, Unit] =
       Prism[Country, Unit]({ case USA => Some(()); case _ => None }, _ => USA)
 
-    val uk: Prism[Country, UKRegion] = ???
+    val uk: Prism[Country, UKRegion] =
+      Prism[Country, UKRegion]({ case UK(region) => Some(region); case _ => None }, UK)
 
-    val poland: Prism[Country, Unit] = ???
+    val poland: Prism[Country, Unit] =
+      Prism[Country, Unit]({ case Poland => Some(()); case _ => None }, _ => Poland)
   }
-  case object USA                  extends Country
-  case class  UK(region: UKRegion) extends Country
-  case object Poland               extends Country
+
+  case object Poland                    extends Country
+  case object USA                       extends Country
+  final case class UK(region: UKRegion) extends Country
+
   sealed trait UKRegion
 
   final case class Org(name: String, address: Address, site: Site)
@@ -747,7 +753,20 @@ object optics {
     val salary: Lens[Employee, BigDecimal] = Lens[Employee, BigDecimal](_.salary, s => _.copy(salary = s))
   }
 
-  lazy val org: Org = ???
+  lazy val org: Org = Org(
+    name = "foo",
+    address = Address("3", "street", "12345", USA),
+    site = Site(
+      manager = Employee(
+        name = "john doe",
+        dob = Instant.from(LocalDate.of(1980, 1, 1)),
+        salary = BigDecimal(200000),
+        address = Address("10", "street", "11000", USA)
+      ),
+      address = Address("4", "street", "54321", Poland),
+      employees = Set.empty[Employee]
+    )
+  )
 
   //
   // EXERCISE 1
@@ -755,7 +774,7 @@ object optics {
   // Implement the `⋅` method of `Lens` for `Lens`.
   //
   final case class Lens[S, A](get: S => A, set: A => S => S) { self =>
-    def ⋅ [B](that: Lens[A, B]): Lens[S, B] = Lens(that.get compose self.get, b => s => self.set(that.set(b)(self.get(s)))(s))
+    def ⋅ [B](that: Lens[A, B]): Lens[S, B] = Lens(that.get compose self.get, b => updated(that.set(b)))
 
     def ⋅ [B](that: Optional[A, B]): Optional[S, B] = ???
 
@@ -763,8 +782,7 @@ object optics {
 
     def ⋅ [B](that: Traversal[A, B]): Traversal[S, B] = ???
 
-    final def updated(f: A => A): S => S =
-      (s: S) => self.set(f(self.get(s)))(s)
+    def updated(f: A => A): S => S = (s: S) => self.set(f(self.get(s)))(s)
   }
 
   //
@@ -796,8 +814,7 @@ object optics {
 
     def ⋅ [B](that: Traversal[A, B]): Traversal[S, B] = ???
 
-    final def select(implicit ev: Unit =:= A): S =
-      set(ev(()))
+    def select(implicit ev: Unit =:= A): S = set(ev(()))
   }
 
   //
@@ -805,19 +822,15 @@ object optics {
   //
   // Implement `_Left` and `_Right`.
   //
-  def _Left[A, B]: Prism[Either[A, B], A] =
-    ???
-  def _Right[A, B]: Prism[Either[A, B], B] =
-    ???
+  def _Left[A, B]: Prism[Either[A, B], A] = ???
+  def _Right[A, B]: Prism[Either[A, B], B] = ???
 
   //
   // EXERCISE 5
   //
   // Implement `⋅` for `Optional` for `Optional`.
   //
-  final case class Optional[S, A](
-    getOrModify: S => Either[S, A],
-    set: A => (S => S)) {
+  final case class Optional[S, A](getOrModify: S => Either[S, A], set: A => S => S) {
     def ⋅ [B](that: Optional[A, B]): Optional[S, B] = ???
 
     def ⋅ [B](that: Lens[A, B]): Optional[S, B] = ???
@@ -826,7 +839,7 @@ object optics {
 
     def ⋅ [B](that: Traversal[A, B]): Traversal[S, B] = ???
 
-    final def get(s: S): Option[A] = getOrModify(s).right.toOption
+    def get(s: S): Option[A] = getOrModify(s).right.toOption
   }
 
   //
