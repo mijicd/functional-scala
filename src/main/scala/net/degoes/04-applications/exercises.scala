@@ -51,12 +51,35 @@ object exercises extends App {
   //
   // Implement a version of the `crawlIO` function that works in parallel.
   //
+  // CONCLUSION: the proper solution would involve termination policy
+  //
   def crawlIOPar[E: Monoid, A: Monoid](
     seeds     : Set[URL],
     router    : URL => Set[URL],
-    processor : (URL, String) => IO[E, A]): IO[Nothing, Crawl[E, A]] =
-      ???
+    processor : (URL, String) => IO[E, A]): IO[Nothing, (Fiber[Nothing, Unit], Ref[(Crawl[E, A], Set[URL])])] = {
 
+    def start(n: Int, queue: Queue[URL], ref: Ref[(Crawl[E, A], Set[URL])]): IO[Nothing, Fiber[Nothing, Unit]] =
+      IO.forkAll(List.fill(n)(queue.take.flatMap(url =>
+        getURL(url).redeem(
+          _    => IO.unit,
+          html => processor(url, html).redeemPure(Crawl(_, mzero[A]), Crawl(mzero[E], _)).flatMap { crawl1 =>
+            val urls = extractURLs(url, html).toSet.flatMap(router)
+
+            ref.modify {
+              case (crawl0, visited) =>
+                (visited, (crawl0 |+| crawl1, visited ++ urls))
+            }.flatMap(old => IO.traverse(urls -- old)(queue.offer).void)
+          }
+        )
+      ).forever)).map(_.map(_ => ()))
+
+    for {
+      ref   <- Ref(mzero[Crawl[E, A]] -> seeds)
+      queue <- Queue.bounded[URL](1000)
+      _     <- IO.sequence(seeds.toList.map(queue.offer))
+      fiber <- start(10, queue, ref)
+    } yield (fiber, ref)
+  }
   //
   // EXERCISE 3
   //
@@ -67,8 +90,30 @@ object exercises extends App {
     seeds     : Set[URL],
     router    : URL => Set[URL],
     processor : (URL, String) => IO[E, A],
-    getURL    : URL => IO[Exception, String] = getURL(_)): IO[Nothing, Crawl[E, A]] =
-      ???
+    getURL    : URL => IO[Exception, String] = getURL(_)): IO[Nothing, (Fiber[Nothing, Unit], Ref[(Crawl[E, A], Set[URL])])] = {
+
+    def start(n: Int, queue: Queue[URL], ref: Ref[(Crawl[E, A], Set[URL])]): IO[Nothing, Fiber[Nothing, Unit]] =
+      IO.forkAll(List.fill(n)(queue.take.flatMap(url =>
+        getURL(url).redeem(
+          _    => IO.unit,
+          html => processor(url, html).redeemPure(Crawl(_, mzero[A]), Crawl(mzero[E], _)).flatMap { crawl1 =>
+            val urls = extractURLs(url, html).toSet.flatMap(router)
+
+            ref.modify {
+              case (crawl0, visited) =>
+                (visited, (crawl0 |+| crawl1, visited ++ urls))
+            }.flatMap(old => IO.traverse(urls -- old)(queue.offer).void)
+          }
+        )
+      ).forever)).map(_.map(_ => ()))
+
+    for {
+      ref   <- Ref(mzero[Crawl[E, A]] -> seeds)
+      queue <- Queue.bounded[URL](1000)
+      _     <- IO.sequence(seeds.toList.map(queue.offer))
+      fiber <- start(10, queue, ref)
+    } yield (fiber, ref)
+  }
 
   //
   // EXERCISE 4
@@ -76,7 +121,8 @@ object exercises extends App {
   // Create a type class to describe `printLine` and `readLine`.
   //
   trait Console[F[_]] {
-    ???
+    def printLine(line: String): F[Unit]
+    def readLine: F[String]
   }
   object Console {
     def apply[F[_]](implicit F: Console[F]): Console[F] = F
@@ -88,8 +134,8 @@ object exercises extends App {
   // Implement helper methods called `printLine` and `readLine` that work with
   // any `F[_]` that supports the `Console` effect.
   //
-  def printLine[F[_]: Console](line: String): F[Unit] = ???
-  def readLine[F[_]: Console]: F[String] = ???
+  def printLine[F[_]: Console](line: String): F[Unit] = Console[F].printLine(line)
+  def readLine[F[_]: Console]: F[String] = Console[F].readLine
 
   //
   // EXERCISE 6
@@ -100,9 +146,12 @@ object exercises extends App {
   //
   implicit def ConsoleIO[E]: Console[IO[E, ?]] =
     new Console[IO[E, ?]] {
-      def printLine(line: String): IO[E, Unit] = ???
-      def readLine: IO[E, String] = ???
+      def printLine(line: String): IO[E, Unit] = IO.sync(println(line))
+      def readLine: IO[E, String] = IO.sync(scala.io.StdIn.readLine)
     }
+
+  readLine[IO[Exception, ?]]
+  printLine[IO[Error, ?]]("hello!")
 
   //
   // EXERCISE 7
@@ -119,8 +168,10 @@ object exercises extends App {
   def nextInt[F[_]: Random](max: Int): F[Int] = Random[F].nextInt(max)
   implicit def RandomIO[E]: Random[IO[E, ?]] =
     new Random[IO[E, ?]] {
-      def nextInt(max: Int): IO[E, Int] = ???
+      def nextInt(max: Int): IO[E, Int] = IO.sync(scala.util.Random.nextInt(max))
     }
+
+  nextInt[IO[Throwable, ?]](123)
 
   //
   // EXERCISE 8
@@ -129,18 +180,40 @@ object exercises extends App {
   // requiring only the capability to perform `Console` and `Random` effects.
   //
   def myGame[F[_]: Console: Random: Monad]: F[Unit] =
-    ???
+    for {
+      name  <- getName[F]
+      word  <- chooseWord[F]
+      state <- State(name, Set(), word).point[F]
+      _     <- renderState[F](state)
+      _     <- gameLoop[F](state)
+    } yield ()
 
-  case class State(name: String, guesses: Set[Char], word: String) {
+  final case class State(name: String, guesses: Set[Char], word: String) {
     def failures: Int = (guesses -- word.toSet).size
 
     def playerLost: Boolean = failures > 10
 
-    def playerWon: Boolean = (word.toSet -- guesses).size == 0
+    def playerWon: Boolean = (word.toSet -- guesses).isEmpty
   }
 
-  def gameLoop[F[_]: Console: Monad](state: State): F[State] =
-    ???
+  def gameLoop[F[_]: Console: Monad](state0: State): F[State] =
+    for {
+      guess <- getChoice[F]
+      state <- state0.copy(guesses = state0.guesses + guess).point[F]
+      _ <- renderState[F](state)
+      state <- if (state.playerLost)
+                 printLine[F](s"Sorry, ${state.name}, you lost!") *> state.point[F]
+               else if (state.playerWon)
+                 printLine[F](s"Congratulations, ${state.name}, you won!!!") *> state.point[F]
+               else if (state0.guesses.contains(guess))
+                 printLine[F](s"Stop being silly, ${state.name}!") *> gameLoop[F](state)
+               else {
+                 val guessedRight = state.word.contains(guess)
+                 printLine[F](
+                   if (guessedRight) s"Good job, ${state.name}, keep goind!"
+                   else s"No luck, ${state.name}, but you still have a chance!") *> gameLoop[F](state)
+               }
+    } yield state
 
   def renderState[F[_]: Console](state: State): F[Unit] = {
     //
@@ -163,13 +236,21 @@ object exercises extends App {
   }
 
   def getChoice[F[_]: Console: Monad]: F[Char] =
-    ???
+    for {
+      _      <- printLine[F]("Please guess a letter:")
+      line   <- readLine[F]
+      letter <- line.trim.toLowerCase.toList match {
+                  case char :: Nil if char.isLetter => char.point[F]
+                  case _ =>
+                    printLine[F]("You didn't enter a letter.") *> getChoice[F]
+                }
+    } yield letter
 
   def getName[F[_]: Console: Apply]: F[String] =
-    ???
+    printLine[F]("Please enter your name:") *> readLine[F]
 
   def chooseWord[F[_]: Random: Functor]: F[String] =
-    ???
+    nextInt[F](Dictionary.length).map(idx => Dictionary.lift(idx).getOrElse("buggy"))
 
   val Dictionary = List("aaron", "abelian", "ability", "about", "abstract", "abstract", "abstraction", "accurately", "adamek", "add", "adjacent", "adjoint", "adjunction", "adjunctions", "after", "after", "again", "ahrens", "albeit", "algebra", "algebra", "algebraic", "all", "all", "allegories", "almost", "already", "also", "american", "among", "amount", "ams", "an", "an", "analysis", "analytic", "and", "and", "andre", "any", "anyone", "apart", "apologetic", "appears", "applicability", "applications", "applications", "applied", "apply", "applying", "applying", "approach", "archetypical", "archetypical", "are", "areas", "argument", "arising", "aristotle", "arrowsmorphism", "article", "arxiv13026946", "arxiv13030584", "as", "as", "aspect", "assumed", "at", "attempts", "audience", "august", "awodey", "axiom", "axiomatic", "axiomatized", "axioms", "back", "barr", "barry", "basic", "basic", "be", "beginners", "beginning", "behind", "being", "benedikt", "benjamin", "best", "better", "between", "bicategories", "binary", "bodo", "book", "borceux", "both", "both", "bourbaki", "bowdoin", "brash", "brendan", "build", "built", "but", "but", "by", "called", "cambridge", "can", "cardinal", "carlos", "carnap", "case", "cases", "categorial", "categorical", "categorical", "categories", "categories", "categorification", "categorize", "category", "category", "cats", "catsters", "central", "certain", "changes", "charles", "cheng", "chicago", "chiefly", "chopin", "chris", "cite", "clash", "classes", "classical", "closed", "coend", "coin", "colimit", "colin", "collection", "collections", "comparing", "completion", "composed", "composition", "computational", "computer", "computing", "concept", "concepts", "concepts", "conceptual", "concrete", "confronted", "consideration", "considers", "consistently", "construction", "constructions", "content", "contents", "context", "context", "contexts", "continues", "continuous", "contrast", "contributed", "contributions", "cooper", "correctness", "costas", "count", "course", "cover", "covering", "current", "currently", "david", "decategorification", "deducing", "define", "defined", "defining", "definition", "definitions", "der", "derives", "described", "describing", "description", "descriptions", "detailed", "development", "dictum", "did", "different", "dimensions", "directed", "discovered", "discovery", "discuss", "discussed", "discussion", "discussion", "disparage", "disservice", "do", "does", "driving", "drossos", "duality", "dvi", "each", "easy", "ed", "edges", "edit", "edition", "eilenberg", "eilenbergmaclane", "elementary", "elementary", "elements", "elementwise", "elephant", "ellis", "else", "embedding", "embodiment", "embryonic", "emily", "end", "enthusiastic", "equations", "equivalence", "equivalences", "equivalences", "etc", "etcs", "eugenia", "even", "eventually", "everything", "evident", "example", "examples", "examples", "except", "excused", "exist", "exists", "exposure", "expressed", "expressiveness", "extension", "extra", "f", "fact", "fair", "families", "far", "feeds", "feeling", "finds", "finite", "first", "flourished", "focuses", "folklore", "follows", "fong", "for", "for", "force", "forced", "foremost", "form", "formalizes", "formulated", "forthcoming", "found", "foundation", "foundations", "foundations", "francis", "free", "freyd", "freydmitchell", "from", "functions", "functor", "functor", "functors", "fundamental", "further", "gabrielulmer", "general", "general", "generalized", "generalizes", "geometry", "geometry", "george", "geroch", "get", "gift", "give", "given", "going", "goldblatt", "grandis", "graph", "gray", "grothendieck", "ground", "group", "groupoid", "grp", "guide", "göttingen", "had", "handbook", "handful", "handle", "harper", "has", "have", "he", "here", "here", "herrlich", "higher", "higher", "higherdimensional", "highlevel", "hilberts", "his", "historical", "historically", "history", "history", "holistic", "holland", "home", "homomorphisms", "homotopy", "homotopy", "horizontal", "horst", "however", "i", "idea", "ideas", "ieke", "if", "if", "illustrated", "important", "in", "in", "inaccessible", "inadmissible", "include", "includes", "including", "indeed", "indexes", "infinite", "informal", "initial", "innocent", "instance", "instead", "instiki", "interacting", "internal", "intersection", "into", "introduce", "introduced", "introduces", "introducing", "introduction", "introduction", "introductory", "intuitions", "invitation", "is", "isbell", "isbn", "isomorphisms", "it", "it", "its", "itself", "ive", "j", "jaap", "jacob", "jiri", "johnstone", "joy", "jstor", "just", "kan", "kant", "kapulkin", "kashiwara", "kind", "kinds", "kleins", "kmorphisms", "ktransfors", "kℕ", "la", "lagatta", "lane", "language", "large", "last", "later", "later", "latest", "lauda", "lawvere", "lawveres", "lead", "leads", "least", "lectures", "led", "leinster", "lemma", "lemmas", "level", "library", "lifting", "likewise", "limit", "limits", "link", "linked", "links", "list", "literally", "logic", "logic", "logically", "logische", "long", "lurie", "mac", "maclane", "made", "major", "make", "manifest", "many", "many", "mappings", "maps", "marco", "masaki", "material", "mathct0305049", "mathematical", "mathematical", "mathematician", "mathematician", "mathematics", "mathematics", "mathematicsbrit", "may", "mclarty", "mclartythe", "means", "meet", "membership", "methods", "michael", "misleading", "mitchell", "models", "models", "moerdijk", "monad", "monadicity", "monographs", "monoid", "more", "morphisms", "most", "mostly", "motivation", "motivations", "much", "much", "music", "must", "myriads", "named", "natural", "natural", "naturally", "navigation", "ncategory", "necessary", "need", "never", "new", "nlab", "no", "no", "nocturnes", "nonconcrete", "nonsense", "nontechnical", "norman", "north", "northholland", "not", "notes", "notes", "nothing", "notion", "now", "npov", "number", "object", "objects", "obliged", "observation", "observing", "of", "on", "one", "online", "oosten", "operads", "opposed", "or", "order", "originally", "other", "other", "others", "out", "outside", "outside", "over", "packing", "page", "page", "pages", "paper", "paradigm", "pareigis", "parlance", "part", "particularly", "pdf", "pedagogical", "people", "perfect", "perhaps", "perpetrated", "perspective", "peter", "phenomenon", "phil", "philosopher", "philosophers", "philosophical", "philosophy", "physics", "physics", "pierce", "pierre", "played", "pleasure", "pointed", "poset", "possession", "power", "powered", "powerful", "pp", "preface", "prerequisite", "present", "preserving", "presheaf", "presheaves", "press", "prevail", "print", "probability", "problem", "proceedings", "process", "progression", "project", "proof", "property", "provide", "provides", "ps", "publicly", "published", "pure", "purloining", "purpose", "quite", "quiver", "rails", "rather", "reader", "realizations", "reason", "recalled", "record", "references", "reflect", "reflects", "rejected", "related", "related", "relation", "relation", "relations", "representable", "reprints", "reproduce", "resistance", "rests", "results", "reveals", "reverse", "revised", "revisions", "revisions", "rezk", "riehl", "robert", "role", "row", "ruby", "running", "same", "samuel", "saunders", "say", "scedrov", "schanuel", "schapira", "school", "sci", "science", "scientists", "search", "see", "see", "sense", "sep", "sequence", "serious", "set", "set", "sets", "sets", "sheaf", "sheaves", "shortly", "show", "shulman", "similar", "simon", "simple", "simplified", "simply", "simpson", "since", "single", "site", "situations", "sketches", "skip", "small", "so", "society", "some", "some", "sometimes", "sophisticated", "sophistication", "source", "space", "speak", "special", "specific", "specifically", "speculative", "spivak", "sprache", "stage", "standard", "statements", "steenrod", "stephen", "steps", "steve", "still", "stop", "strecker", "structural", "structuralism", "structure", "structures", "students", "study", "studying", "subjects", "such", "suggest", "summer", "supported", "supports", "symposium", "syntax", "tac", "taken", "talk", "tannaka", "tautological", "technique", "tend", "tends", "term", "terminology", "ternary", "tex", "textbook", "textbooks", "texts", "than", "that", "the", "the", "their", "their", "them", "themselves", "then", "theorem", "theorems", "theorems", "theoretic", "theoretical", "theories", "theorist", "theory", "theory", "there", "there", "these", "these", "they", "thinking", "this", "this", "thought", "through", "throughout", "thus", "time", "to", "tom", "tone", "too", "toolset", "top", "topics", "topoi", "topological", "topology", "topologyhomotopy", "topos", "topos", "toposes", "toposes", "transactions", "transformation", "transformations", "trinitarianism", "trinity", "triple", "triples", "trivial", "trivially", "true", "turns", "two", "two", "type", "typically", "uncountable", "under", "under", "understood", "unification", "unify", "unions", "univalent", "universal", "universal", "universes", "university", "use", "used", "useful", "using", "usual", "van", "variants", "various", "vast", "vect", "versatile", "video", "videos", "viewpoint", "views", "vol", "vol", "vs", "was", "way", "we", "wealth", "web", "wells", "were", "what", "when", "when", "where", "which", "while", "whole", "whose", "will", "willerton", "william", "willingness", "with", "witticism", "words", "working", "working", "would", "writes", "xfy", "xfygzxgfz", "xy", "yoneda", "york1964", "youtube")
 
@@ -178,7 +259,7 @@ object exercises extends App {
   //
   // Instantiate the polymorphic game to the `IO[Nothing, ?]` type.
   //
-  val myGameIO: IO[Nothing, Unit] = myGame ?
+  val myGameIO: IO[Nothing, Unit] = myGame[IO[Nothing, ?]]
 
   //
   // EXERCISE 10
