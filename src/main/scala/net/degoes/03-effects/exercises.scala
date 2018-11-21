@@ -821,17 +821,12 @@ object zio_resources {
 }
 
 object zio_ref {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   //
   // EXERCISE 1
   //
   // Using the `Ref.apply` constructor, create a `Ref` that is initially `0`.
   //
-  val makeZero: IO[Nothing, Ref[Int]] =
-    ???
+  val makeZero: IO[Nothing, Ref[Int]] = Ref(0)
 
   //
   // EXERCISE 2
@@ -842,9 +837,9 @@ object zio_ref {
   val incrementedBy10: IO[Nothing, Int] =
     for {
       ref   <- makeZero
-      value <- (ref ? : IO[Nothing, Int])
-      _     <- (ref ? : IO[Nothing, Unit])
-      value <- (ref ? : IO[Nothing, Int])
+      value <- ref.get
+      _     <- ref.set(value + 10)
+      value <- ref.get
     } yield value
 
   //
@@ -856,7 +851,7 @@ object zio_ref {
   val atomicallyIncrementedBy10: IO[Nothing, Int] =
     for {
       ref   <- makeZero
-      value <- (ref ? : IO[Nothing, Int])
+      value <- ref.update(_ + 10)
     } yield value
 
   //
@@ -868,7 +863,7 @@ object zio_ref {
   val atomicallyIncrementedBy10PlusGet: IO[Nothing, Int] =
     for {
       ref   <- makeZero
-      value <- ref.modify(v => (???, v + 10))
+      value <- ref.modify(v => (v, v + 10))
     } yield value
 }
 
