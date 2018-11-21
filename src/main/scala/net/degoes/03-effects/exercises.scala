@@ -481,9 +481,6 @@ object zio_effects {
   import java.util.concurrent.{Executors, TimeUnit}
 
   type ??? = Nothing
-  implicit class FixMe[A](a: A) {
-    def ?[B] = ???
-  }
 
   //
   // EXERCISE 1
@@ -622,10 +619,6 @@ object zio_effects {
 object zio_concurrency {
   type ??? = Nothing
 
-  implicit class FixMe[A](a: A) {
-    def ?[B] = ???
-  }
-
   //
   // EXERCISE 1
   //
@@ -634,8 +627,7 @@ object zio_concurrency {
   //
   val leftContestent1 = IO.never
   val rightContestent1 = putStrLn("Hello World")
-  val raced1: IO[java.io.IOException, Unit] =
-    ???
+  val raced1: IO[java.io.IOException, Unit] = leftContestent1.race(rightContestent1)
 
   //
   // EXERCISE 2
@@ -645,7 +637,7 @@ object zio_concurrency {
   //
   val leftContestent2: IO[Exception, Nothing] = IO.fail(new Exception("Uh oh!"))
   val rightContestent2: IO[Exception, Unit] = IO.sleep(10.milliseconds) *> putStrLn("Hello World")
-  val raced2: ??? = ???
+  val raced2: IO[Exception, Unit] = leftContestent2.race(rightContestent2)
 
   //
   // EXERCISE 3
@@ -655,17 +647,15 @@ object zio_concurrency {
   //
   val leftWork1: IO[Nothing, Int] = fibonacci(10)
   val rightWork1: IO[Nothing, Int] = fibonacci(10)
-  val par1: ??? = ???
-
+  val par1: IO[Nothing, (Int, Int)] = leftWork1.par(rightWork1)
 
   //
   // EXERCISE 4
   //
   // Compute all values `workers` in parallel using `IO.parAll`.
   //
-  val workers: List[IO[Nothing, Int]] = (1 to 10).toList.map(fibonacci(_))
-  val workersInParallel: IO[Nothing, List[Int]] =
-    ???
+  val workers: List[IO[Nothing, Int]] = (1 to 10).toList.map(fibonacci)
+  val workersInParallel: IO[Nothing, List[Int]] = IO.parAll(workers)
 
   //
   // EXERCISE 5
@@ -674,7 +664,12 @@ object zio_concurrency {
   // and yielding a tuple of their results.
   //
   def myPar[E, A, B](left: IO[E, A], right: IO[E, B]): IO[E, (A, B)] =
-    ???
+    for {
+      fiberA <- left.fork
+      fiberB <- right.fork
+      a      <- fiberA.join
+      b      <- fiberB.join
+    } yield (a, b)
 
   //
   // EXERCISE 6
@@ -683,9 +678,7 @@ object zio_concurrency {
   // all fibers forked within it will be terminated cleanly.
   //
   val supervisedExample: IO[Nothing, Unit] =
-    (for {
-      fiber <- fibonacci(10000).fork
-    } yield ())
+    IO.supervise(for { _ <- fibonacci(10000).fork } yield ())
 
   //
   // EXERCISE 7
@@ -696,7 +689,8 @@ object zio_concurrency {
   val interrupted1: IO[Nothing, Unit] =
     for {
       fiber <- fibonacci(10000).fork
-    } yield ()
+      res   <- fiber.interrupt
+    } yield res
 
   //
   // EXERCISE 8
@@ -709,7 +703,7 @@ object zio_concurrency {
     for {
       fiber1 <- fibonacci(10).fork
       fiber2 <- fibonacci(20).fork
-      both = (??? : Fiber[Nothing, Int])
+      both = fiber1.zipWith(fiber2)(_ + _)
       _      <- both.interrupt
     } yield ()
 
@@ -720,7 +714,7 @@ object zio_concurrency {
   // computation after 60 seconds.
   //
   val timedout: IO[Nothing, Option[Int]] =
-    fibonacci(100) ?
+    fibonacci(100).timeout(Option.empty[Int])(Some(_))(60.seconds)
 
   //
   // EXERCISE 10
@@ -729,8 +723,7 @@ object zio_concurrency {
   // integers in parallel.
   //
   val fibsToCompute = List(1, 2, 3, 4, 5, 6, 7)
-  val inParallel: IO[Nothing, List[Int]] =
-    ???
+  val inParallel: IO[Nothing, List[Int]] = IO.parTraverse(fibsToCompute)(fibonacci)
 
   def fibonacci(n: Int): IO[Nothing, Int] =
     if (n <= 1) IO.now(n)
