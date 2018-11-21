@@ -22,8 +22,29 @@ object exercises extends App {
   def crawlIO[E: Monoid, A: Monoid](
     seeds     : Set[URL],
     router    : URL => Set[URL],
-    processor : (URL, String) => IO[E, A]): IO[Nothing, Crawl[E, A]] =
-      ???
+    processor : (URL, String) => IO[E, A]): IO[Nothing, Crawl[E, A]] = {
+
+    def loop(seeds: Set[URL], ref: Ref[(Crawl[E, A], Set[URL])]): IO[Nothing, Unit] =
+      IO.traverse(seeds) { url =>
+        getURL(url).redeem(
+          _    => IO.unit,
+          html =>
+            processor(url, html).redeemPure(Crawl(_, mzero[A]), Crawl(mzero[E], _)).flatMap { crawl1 =>
+              val urls = extractURLs(url, html).toSet.flatMap(router)
+
+              ref.modify {
+                case (crawl0, visited) => (visited, (crawl0 |+| crawl1, visited ++ urls))
+              }.flatMap(visited => loop(urls -- visited, ref))
+            }
+        )
+      }.void
+
+    for {
+      ref <- Ref(mzero[Crawl[E, A]] -> seeds)
+      _   <- loop(seeds, ref)
+      res <- ref.get
+    } yield res._1
+  }
 
   //
   // EXERCISE 2
