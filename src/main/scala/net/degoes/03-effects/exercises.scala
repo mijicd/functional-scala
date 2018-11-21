@@ -868,18 +868,13 @@ object zio_ref {
 }
 
 object zio_promise {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   //
   // EXERCISE 1
   //
   // Using the `make` method of `Promise`, construct a promise that cannot
   // fail but can be completed with an integer.
   //
-  val makeIntPromise: IO[Nothing, Promise[Nothing, Int]] =
-    ???
+  val makeIntPromise: IO[Nothing, Promise[Nothing, Int]] = Promise.make[Nothing, Int]
 
   //
   // EXERCISE 2
@@ -890,7 +885,7 @@ object zio_promise {
   val completed1: IO[Nothing, Boolean] =
     for {
       promise   <- makeIntPromise
-      completed <- (promise ? : IO[Nothing, Boolean])
+      completed <- promise.complete(42)
     } yield completed
 
   //
@@ -899,11 +894,9 @@ object zio_promise {
   // Using the `error` method of `Promise`, try to complete a promise
   // constructed with `makeIntPromise`. Explain your findings.
   //
-  val errored1: IO[Nothing, Boolean] =
-    for {
-      promise   <- makeIntPromise
-      completed <- (promise ? : IO[Nothing, Boolean])
-    } yield completed
+  // CONCLUSION: cannot be invoked since it require Nothing value to be passed
+  //
+  val errored1: IO[Nothing, Boolean] = ???
 
   //
   // EXERCISE 4
@@ -915,7 +908,7 @@ object zio_promise {
   val errored2: IO[Nothing, Boolean] =
     for {
       promise   <- Promise.make[Error, String]
-      completed <- (promise ? : IO[Nothing, Boolean])
+      completed <- promise.error(new Error)
     } yield completed
 
   //
@@ -928,7 +921,7 @@ object zio_promise {
   val interrupted: IO[Nothing, Boolean] =
     for {
       promise   <- Promise.make[Error, String]
-      completed <- (promise ? : IO[Nothing, Boolean])
+      completed <- promise.interrupt
     } yield completed
 
   //
@@ -942,7 +935,7 @@ object zio_promise {
       promise <- Promise.make[Nothing, Int]
       _       <- (IO.sleep(10.seconds) *> promise.complete(42)).fork
       _       <- putStrLn("Waiting for promise to be completed...").attempt.void
-      value   <- (promise ? : IO[Nothing, Int])
+      value   <- promise.get
       _       <- putStrLn("Got: " + value).attempt.void
     } yield value
 
@@ -957,7 +950,7 @@ object zio_promise {
       promise <- Promise.make[Error, Int]
       _       <- (IO.sleep(10.seconds) *> promise.error(new Error("Uh oh!"))).fork
       _       <- putStrLn("Waiting for promise to be completed...").attempt.void
-      value   <- (promise ? : IO[Error, Int])
+      value   <- promise.get
       _       <- putStrLn("This line will NEVER be executed").attempt.void
     } yield value
 
@@ -971,7 +964,7 @@ object zio_promise {
     for {
       promise <- Promise.make[Error, Int]
       _       <- promise.interrupt.delay(10.milliseconds).fork
-      value   <- (promise ? : IO[Error, Int])
+      value   <- promise.get
     } yield value
 }
 
