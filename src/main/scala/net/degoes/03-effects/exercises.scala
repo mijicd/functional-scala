@@ -1251,31 +1251,26 @@ object zio_interop {
 }
 
 object zio_rts {
-  implicit class FixMe[A](a: A) {
-    def ? = ???
-  }
-
   //
   // EXERCISE 1
   //
   // Create a new runtime system (that extends scalaz.zio.RTS).
   //
-  val MyRTS: RTS = ???
+  object MyRTS extends RTS
 
   //
   // EXERCISE 2
   //
   // Run the following `IO` by using the `unsafeRun` method of `MyRTS`.
   //
-  (putStrLn("Hello World") ? : Unit)
+  MyRTS.unsafeRun(putStrLn("Hello World"))
 
   //
   // EXERCISE 3
   //
   // Run the following `IO` by using the `unsafeRunSync` method of `MyRTS`.
   //
-  import java.io.IOException
-  (putStrLn("Hello World") ? : ExitResult[IOException, Unit])
+  MyRTS.unsafeRunSync(putStrLn("Hello World"))
 
   //
   // EXERCISE 4
