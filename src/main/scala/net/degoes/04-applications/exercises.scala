@@ -10,10 +10,6 @@ import scalaz._
 import Scalaz._
 
 object exercises extends App {
-  implicit class FixMe[A](a: A) {
-    def ?[B] = ???
-  }
-
   //
   // EXERCISE 1
   //
@@ -268,8 +264,8 @@ object exercises extends App {
   // read from the console), a log of output (that has been written to the
   // console), and a list of "random" numbers.
   //
-  case class TestData(/* ??? */ ) {
-    def renderOutput: String = ???
+  final case class TestData(input: List[String],output: List[String], random: List[Int]) {
+    def renderOutput: String = output.reverse.mkString("\n")
   }
 
   //
@@ -287,9 +283,9 @@ object exercises extends App {
       def bind[A, B](fa: TestIO[E,A])(f: A => TestIO[E,B]): TestIO[E,B] =
         TestIO(fa.run.flatMap(f.andThen(_.run)))
 
-      def printLine(line: String): TestIO[E,Unit] = ???
-      def readLine: TestIO[E, String] = ???
-      def nextInt(max: Int): TestIO[E,Int] = ???
+      def printLine(line: String): TestIO[E,Unit] = TestIO(ref.update(d => d.copy(output = line :: d.output)).void)
+      def readLine: TestIO[E, String] = TestIO(ref.modify(d => (d.input.head, d.copy(input = d.input.drop(1)))))
+      def nextInt(max: Int): TestIO[E,Int] =  TestIO(ref.modify(d => (d.random.head, d.copy(random = d.random.drop(1)))))
     }
 
   //
@@ -302,7 +298,8 @@ object exercises extends App {
     for {
       ref   <- Ref(data)
       _     <- ({
-                 ???
+                implicit val F = createTestInstance[Nothing](ref)
+                myGame[TestIO[Nothing, ?]]
                }: TestIO[Nothing, Unit]).run
       data  <- ref.get
     } yield data
@@ -312,9 +309,8 @@ object exercises extends App {
   //
   // Create some test data for a trial run of the game.
   //
-  val GameTest1 = testGame(TestData(
-    /* ??? */
-  )).map(_.renderOutput)
+  val GameTest1 = testGame(TestData(input = List("John", "a", "r", "o", "n"), output = Nil, random = List(0)))
+    .map(_.renderOutput)
 
   final case class Crawl[E, A](error: E, value: A) {
     def leftMap[E2](f: E => E2): Crawl[E2, A] = Crawl(f(error), value)
